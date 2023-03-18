@@ -1,0 +1,3217 @@
+#include <vcl.h>
+#pragma hdrstop
+
+#include "Main.h"
+#include "MPanel.h"
+
+#include <string.h>
+#include <stdio.h>
+#include <FileCtrl.hpp>
+#include <Sysutils.hpp>
+
+#include <IdGlobal.hpp>
+#include <Dialogs.hpp>
+
+char  PdbHeader[78];
+
+AnsiString ExePath;
+AnsiString Buffer;
+
+AnsiString PdbName;
+AnsiString SetupFile;
+AnsiString SetupFileSaved;
+AnsiString SetupFileTemp;
+AnsiString SetupFilePrev;
+
+AnsiString Directory;
+AnsiString Title;
+AnsiString Info;
+AnsiString Secret;
+AnsiString EditFile;
+
+int   SetupChanged = false;
+
+char  PdbVersion = 1;
+char* PdbType = "BOOK";
+char* PdbCreator = "MTIT";
+char* IniStr = "mPDB.ini";
+
+int   RecordCount;
+char  PdbList[4000]; // max = 499 chapters
+char  PdbBookInfo[10000];
+
+int    DataLength = 0;
+short  DataCount = 0;
+char*  Data = NULL;
+short* DataPtr = NULL;
+
+int   ChapterCount = 0;
+int   ChapterNumber;
+int   ChapterNumberInitial;
+int   ChapterNumberSaved = 0;;
+int   ChapterSize[1000];
+
+TCursor SaveCursor;
+int SavingSetupFile = false;
+int SetupFileChanged = false;
+
+AnsiString EditChapter;
+AnsiString EditFileSaved;
+AnsiString EditFileTemp;
+AnsiString EditFilePrev;
+
+AnsiString SourceStr;
+AnsiString TargetStr;
+
+int   ResumePosition = 0;
+int   SelStartSaved;
+int   SelLengthSaved;
+
+int   SelStartTemp;
+int   SelStartPrev;
+int   SelLengthTemp;
+int   SelLengthPrev;
+
+int   ReplacePrompt;
+AnsiString ExcludeNext;
+AnsiString ExcludePrev;
+
+int Encrypt = false;
+char* encrypted_str = "★★★★★★\r\n★以下內容★\r\n★︽本版︾★\r\n★無法顯示★\r\n★★★★★★\r\n";
+
+int SkipChineseZero = false;
+
+TMemo *Memo;
+MPanel* Panel = NULL; // 2006/5/30
+int Preview = false;
+int PlateNumber = 0;
+int FlipPageNumber = 1;
+int PlatePageNumber[4];
+int PlatePageLoaded[4];
+
+TButton* Plate1Button[72];
+TButton* Plate2Button[72];
+TButton* Plate3Button[48];
+int Plate1ButtonsCreated = false;
+int Plate2ButtonsCreated = false;
+int Plate3ButtonsCreated = false;
+
+int WindowHeight = 735;
+int WindowWidth = 756;
+int PreviewWidth = 620;
+
+int PlateModeSwitched = false;
+
+
+//---------------------------------------------------------------------------
+#pragma package(smart_init)
+#pragma resource "*.dfm"
+THome *Home;
+//---------------------------------------------------------------------------
+
+/*--------------*/
+/* THome::THome */
+/*--------------*/
+
+__fastcall THome::THome(TComponent* Owner) : TForm(Owner) {
+
+   Panel2->Hide();
+   Panel3->Hide();
+   Panel4->Hide();
+   btnSwitch->Hide();
+   TabControl2->Hide();
+
+   Height = WindowHeight;
+   Width = WindowWidth;
+   GetExePath();
+   LoadIni();
+   Memo = Memo1;
+
+   Panel2->Top = Panel1->Top;
+   Panel2->Left = Panel1->Left;
+   Panel2->Width = Panel1->Width;
+   Panel2->Height = Panel1->Height;
+
+   Panel3->Top = Panel1->Top;
+   Panel3->Left = Panel1->Left;
+   Panel3->Width = Panel1->Width;
+   Panel3->Height = Panel1->Height;
+
+   Panel4->Top = Panel1->Top;
+   Panel4->Left = Panel1->Left;
+   Panel4->Width = Panel1->Width;
+   Panel4->Height = Panel1->Height;
+
+   for (int i = 0; i <= 3; i++) {
+      PlatePageNumber[i] = 1;
+      PlatePageLoaded[i] = 0;
+      }
+
+   }
+
+
+/*---------------*/
+/* THome::~THome */
+/*---------------*/
+
+__fastcall THome::~THome() {
+
+   if (Data) delete Data;
+   if (DataPtr) delete DataPtr;
+   if (Panel) delete Panel;
+   if (Plate1ButtonsCreated) {
+      for (int i = 0; i < 72; i++)  delete Plate1Button[i];
+      }
+   if (Plate2ButtonsCreated) {
+      for (int i = 0; i < 72; i++) delete Plate2Button[i];
+      }
+   if (Plate3ButtonsCreated) {
+      for (int i = 0; i < 48; i++) delete Plate3Button[i];
+      }
+
+   }
+
+
+/*------------------*/
+/* THome::InitPanel */
+/*------------------*/
+
+void __fastcall THome::InitPanel() {
+
+   Panel = new MPanel(this);
+   Panel->Parent = this;
+   Panel->TabOrder = 0;
+   Panel->SetPageFont();
+
+   }
+
+
+/*----------------------*/
+/* THome::CreateButtons */
+/*----------------------*/
+
+void __fastcall THome::CreateButtons() {
+
+   if (PlateNumber == 1) {
+      for (int i = 0; i < 72; i++) {
+         TButton* button = new TButton(Panel2);
+         button->Height = 25;
+         button->Parent = Panel2;
+         button->OnClick = btnInsertChar;
+         Plate1Button[i] = button;
+         }
+      Plate1ButtonsCreated = true;
+      }
+   else if (PlateNumber == 2) {
+      for (int i = 0; i < 72; i++) {
+         TButton* button = new TButton(Panel3);
+         button->Height = 25;
+         button->Parent = Panel3;
+         button->OnClick = btnInsertChar;
+         Plate2Button[i] = button;
+         }
+      Plate2ButtonsCreated = true;
+      }
+   else if (PlateNumber == 3) {
+      for (int i = 0; i < 48; i++) {
+         TButton* button = new TButton(Panel4);
+         button->Height = 25;
+         button->Parent = Panel4;
+         button->OnClick = btnInsertChar;
+         Plate3Button[i] = button;
+         }
+      Plate3ButtonsCreated = true;
+      }
+   }
+
+
+/*-------------------*/
+/* THome::GetExePath */
+/*-------------------*/
+
+void __fastcall THome::GetExePath() {
+
+   char path[256];
+   strcpy(path, Application->ExeName.c_str());
+   int length = Application->ExeName.Length() - 1;
+   for (int i = length; i > 0; i--)
+     if (path[i] == '\\') { path[i+1] = 0; break; }
+
+   ExePath = path;
+
+   }
+
+
+/*----------------------*/
+/* THome::RestoreCursor */
+/*----------------------*/
+
+void __fastcall THome::RestoreCursor() {
+
+   Screen->Cursor = SaveCursor;
+
+   }
+
+
+/*-----------------------*/
+/* THome::ShowWaitCursor */
+/*-----------------------*/
+
+void __fastcall THome::ShowWaitCursor() {
+
+   SaveCursor = Screen->Cursor;
+   Screen->Cursor = crHourGlass;
+
+   }
+
+
+/*---------------------*/
+/* THome::GetDataCount */
+/*--------------------*/
+
+int __fastcall THome::GetDataCount(char* data, int length) {
+
+   int count = 1;
+   for (int i = 0; i < length; i++) {
+      if (data[i] == '\r') count++;
+      }
+
+   return count;
+
+   }
+
+
+/*-------------------*/
+/* THome::SetDataPtr */
+/*-------------------*/
+
+void __fastcall THome::SetDataPtr(char* data, int length, short* ptr) {
+
+   ptr[0] = 0;
+   int count = 1;
+   for (int i = 0; i <= length; i++) {
+      if (data[i] == '\r') {
+         data[i] = 0;
+         ptr[count++] = i + 2;
+         }
+      }
+
+   }
+
+
+/*------------------------*/
+/* THome::GetChapterSizes */
+/*------------------------*/
+
+int __fastcall THome::GetChapterSize(int i) {
+
+   AnsiString path = Directory + "\\";
+   AnsiString name = path + i;
+   name = name + ".txt";
+   if (i > 0 && !FileExists(name)) {
+      name = " 找不到！" + name;
+      Application->MessageBox(name.c_str(), "mPDB", MB_OK);
+      return false;
+      }
+   HFILE file = _lopen(name.c_str(), OF_READ);
+   ChapterSize[i] = (file == HFILE_ERROR)
+         ? 0 : _llseek(file, 0L, 2) + 1;
+   if (ChapterSize[i] > 65500) {
+      name = name + " 檔案過大，在 Palm PDA 上會有無法閱讀的問題！";
+      Application->MessageBox(name.c_str(), "mPDB", MB_OK);
+      }
+   _lclose(file);
+
+   return true;
+
+   }
+
+
+/*------------------------*/
+/* THome::GetChapterSizes */
+/*------------------------*/
+
+int __fastcall THome::GetChapterSizes() {
+
+   AnsiString path = Directory + "\\";
+   for (int i = 0; i <= ChapterCount; i++) {
+      AnsiString name = path + i;
+      name = name + ".txt";
+      if (i > 0 && !FileExists(name)) {
+         name = " 找不到！" + name;
+         Application->MessageBox(name.c_str(), "mPDB", MB_OK);
+         return false;
+         }
+      HFILE file = _lopen(name.c_str(), OF_READ);
+      ChapterSize[i] = (file == HFILE_ERROR)
+         ? 0 : _llseek(file, 0L, 2) + 1;
+      if (ChapterSize[i] > 65500) {
+         name = name + " 檔案過大，在 Palm PDA 上會有無法閱讀的問題！";
+         Application->MessageBox(name.c_str(), "mPDB", MB_OK);
+         }
+      _lclose(file);
+      }
+
+   return true;
+
+   }
+
+
+/*--------------------*/
+/* THome::LoadChapter */
+/*--------------------*/
+
+void __fastcall THome::LoadChapter(int i) {
+
+   AnsiString path = Directory + "\\";
+   AnsiString name = path + i;
+   EditChapter = name + ".txt";
+
+   Buffer.SetLength(0);
+   HFILE file = _lopen(EditChapter.c_str(), OF_READ);
+   if (file != HFILE_ERROR) {
+      _llseek(file, 0L, 0);
+      int length = ChapterSize[i];
+      Buffer.SetLength(length);
+      _lread(file, Buffer.c_str(), length);
+      Buffer[length] = 0;
+      }
+   _lclose(file);
+
+   ChapterNumber = i;
+
+   }
+
+
+/*----------------------*/
+/* THome::BackupChapter */
+/*----------------------*/
+
+void __fastcall THome::BackupChapter(int i) {
+
+   AnsiString path = Directory + "\\";
+   AnsiString name = path + i;
+   name = name + ".txt";
+
+   AnsiString backup_dir = Directory + "\\backup\\";
+   AnsiString backup_name = backup_dir + i;
+   backup_name = backup_name + ".txt";
+
+   if (!DirectoryExists(backup_dir)) CreateDir(backup_dir);
+   CopyFileTo(name, backup_name);
+
+   }
+
+
+/*--------------------*/
+/* THome::SaveChapter */
+/*--------------------*/
+
+void __fastcall THome::SaveChapter(int i) {
+
+   BackupChapter(i);
+   AnsiString path = Directory + "\\";
+   AnsiString name = path + i;
+   name = name + ".txt";
+
+   OFSTRUCT of;
+   HFILE file = OpenFile(name.c_str(), &of, OF_CREATE);
+   if (file == -1) { _lclose(file); return; }
+   _lwrite(file, &Buffer[1], Buffer.Length() - 1);
+   _lclose(file);
+
+   }
+
+
+/*---------------------*/
+/* THome::SetPdbHeader */
+/*---------------------*/
+
+void __fastcall THome::SetPdbHeader() {
+
+   Init:
+
+     memset(PdbHeader, 0, 78);
+
+   Set_Pdb_Name:
+
+      strcpy(PdbHeader, PdbName.c_str());
+
+   Set_File_Attributes:
+
+      PdbHeader[33] = 0; // Do not backup
+
+   Set_Version:
+   
+      PdbHeader[35] = PdbVersion;
+
+   Set_Creation_Modification_Date:
+
+      PdbHeader[36] = PdbHeader[40] = 59;
+      PdbHeader[37] = PdbHeader[41] = 41;
+      PdbHeader[38] = PdbHeader[42] = 155;
+      PdbHeader[39] = PdbHeader[43] = 229;
+
+   Set_Database_Type:
+
+      strcpy(&PdbHeader[60], PdbType);
+
+   Set_Creator_ID:
+
+      strcpy(&PdbHeader[64], PdbCreator);
+
+   Set_Record_Count:
+
+      int total = 2 + ChapterCount;
+      char* ptr = (char*) &total;
+      PdbHeader[76] = ptr[1];
+      PdbHeader[77] = ptr[0];
+
+   }
+
+
+/*-----------------------*/
+/* THome::SetPdbBookInfo */
+/*-----------------------*/
+
+void __fastcall THome::SetPdbBookInfo() {
+
+   int i;
+   for (i = 0; i < 8; i++) PdbBookInfo[i] = ' ';
+   if (CheckBox1->Checked) PdbBookInfo[1] = 1;
+   if (Encrypt) PdbBookInfo[0] = 1;
+
+   strcpy(&PdbBookInfo[8], Title.c_str());
+   i += Title.Length();
+   PdbBookInfo[i++] = 27;
+
+   strcpy(&PdbBookInfo[i], Info.c_str());
+   i += Info.Length();
+   PdbBookInfo[i++] = 27;
+
+   strcpy(&PdbBookInfo[i], Secret.c_str());
+   i += Secret.Length();
+   PdbBookInfo[i++] = 27;
+
+   AnsiString count = ChapterCount;
+   strcpy(&PdbBookInfo[i], count.c_str());
+   i += count.Length();
+   PdbBookInfo[i++] = 27;
+
+   LoadChapter(0);
+   for (int k = 1; k <= Buffer.Length(); k++) {
+      char c = Buffer[k];
+      if (c == 13) PdbBookInfo[i++] = 27;
+      else if (c != 10) PdbBookInfo[i++] = c;
+      }
+   PdbBookInfo[i] = 0;
+
+   }
+
+
+/*----------------------*/
+/* THome::EncryptBuffer */
+/*----------------------*/
+
+void __fastcall THome::EncryptBuffer() {
+
+   for (int i = 1; i < Buffer.Length(); i++) {
+      if (Buffer[i] & 0x80) { // Chinese character
+         Buffer[i+1] += 1;
+         i++;
+         }
+      }
+
+   }
+
+
+/*-----------------*/
+/* THome::WritePdb */
+/*-----------------*/
+
+void __fastcall THome::WritePdb() {
+
+   Open_File:
+
+      OFSTRUCT of;
+      AnsiString path = Directory + "\\";
+      AnsiString name = path + PdbName;
+      name = name + ".pdb";
+      HFILE file = OpenFile(name.c_str(), &of, OF_CREATE);
+      if (file == -1) { _lclose(file); return; }
+
+   Write_Header:
+
+      _lwrite(file, PdbHeader, 78);
+
+   Write_Record_List:
+
+      RecordCount = 2 + ChapterCount;
+      int size = RecordCount * 8;
+      int offset = 78 + size;
+      memset(PdbList, 0, size);
+      int length = strlen(PdbBookInfo) + 1;
+
+      int p = 0;
+      char* ptr = (char*) &offset;
+      PdbList[p++] = ptr[3];
+      PdbList[p++] = ptr[2];
+      PdbList[p++] = ptr[1];
+      PdbList[p++] = ptr[0];
+      offset += length;
+      p += 4;
+
+      int i;
+      int half = ChapterCount / 2;
+      for (i = 1; i <= ChapterCount + 1; i++) {
+         ptr = (char*) &offset;
+         PdbList[p++] = ptr[3];
+         PdbList[p++] = ptr[2];
+         PdbList[p++] = ptr[1];
+         PdbList[p++] = ptr[0];
+         if (i <= ChapterCount) offset += ChapterSize[i];
+         if (Encrypt) if (i == half + 1) offset += 70;
+         p += 4;
+         }
+
+      _lwrite(file, PdbList, size);
+
+   Write_Book_Info:
+
+      _lwrite(file, PdbBookInfo, length);
+
+   Write_Chapters:
+
+      for (i = 1; i <= ChapterCount; i++) {
+         LoadChapter(i);
+         if (Encrypt) {
+            if (i > half) {
+               EncryptBuffer();
+               if (i == half + 1) {
+                  Buffer.Insert(encrypted_str, 0);
+                  }
+               }
+            }
+         _lwrite(file, &Buffer[1], Buffer.Length());
+         }
+
+   Write_Bookmark_Tail:
+
+      char tail[2];
+      p = -1;
+      ptr = (char*) &p;
+      tail[0] = ptr[1];
+      tail[1] = ptr[0];
+      _lwrite(file, tail, 2);
+      _lclose(file);
+
+   }
+
+
+/*---------------------------*/
+/* THome::fldSetupFileChange */
+/*---------------------------*/
+
+void __fastcall THome::fldSetupFileChange(TObject *Sender) {
+
+   if (SetupFile.Length()) SetupChanged = true;
+   SetupFile = fldSetupFile->Text;
+   if (!SavingSetupFile) LoadSetupFile();
+   else {
+      SavingSetupFile = false;
+      SaveSetupFile();
+      }
+
+   }
+
+
+/*---------------------------*/
+/* THome::fldDirectoryChange */
+/*---------------------------*/
+
+void __fastcall THome::fldDirectoryChange(TObject *Sender) {
+
+   Directory = fldDirectory->Text;
+   int length = Directory.Length();
+   if (length > 0 && Directory[length] == '\\') {
+      Directory.SetLength(length-1);
+      }
+   SetupFileChanged = true;
+
+   }
+
+
+/*------------------------------*/
+/* THome::fldChapterCountChange */
+/*------------------------------*/
+
+void __fastcall THome::fldChapterCountChange(TObject *Sender) {
+
+   if (fldChapterCount->Text.IsEmpty()) ChapterCount = 0;
+   else ChapterCount = fldChapterCount->Text.ToInt();
+   SetupFileChanged = true;
+
+   }
+
+
+/*-----------------------*/
+/* THome::fldTitleChange */
+/*-----------------------*/
+
+void __fastcall THome::fldTitleChange(TObject *Sender) {
+
+   Title = fldTitle->Text;
+   PdbName = Title;
+   SetupFileChanged = true;
+
+   }
+
+
+/*----------------*/
+/* THome::LoadIni */
+/*----------------*/
+
+void __fastcall THome::LoadIni() {
+
+   AnsiString name = ExePath;
+   name = name + IniStr;
+   if (!FileExists(name)) return;
+
+   TStringList* list = new TStringList();
+   try { list->LoadFromFile(name); } catch (EFOpenError&) { }
+   
+
+   if (list->Count == 1) fldSetupFile->Text = list->Strings[0];
+   else {
+      name = list->Values["設定檔"];
+      if (FileExists(name)) {
+         fldSetupFile->Text = name;
+         }
+      Memo1->Font->Name = list->Values["字型"];
+      Memo1->Font->Size = list->Values["字體"].ToInt();
+      int bold = list->Values["粗體"].ToInt();
+      if (bold) Memo1->Font->Style = TFontStyles()<< fsBold;
+      }
+
+   delete list;
+
+   }
+
+
+/*----------------*/
+/* THome::SaveIni */
+/*----------------*/
+
+void __fastcall THome::SaveIni() {
+
+   if (!SetupFile.Length()) return;
+   if (!SetupChanged) return;
+
+   AnsiString name = ExePath;
+   name = name + IniStr;
+
+   TStringList* list = new TStringList();
+   list->Values["設定檔"] = SetupFile;
+   list->Values["字型"] = Memo1->Font->Name;
+   list->Values["字體"] = Memo1->Font->Size;
+   list->Values["粗體"] = Memo1->Font->Style.Contains(fsBold) ? 1 : 0;
+   try { list->SaveToFile(name); } catch (EFOpenError&) { }
+   delete list;
+
+   }
+
+
+/*----------------------*/
+/* THome::LoadSetupFile */
+/*----------------------*/
+
+void __fastcall THome::LoadSetupFile() {
+
+   if (!SetupFile.Length()) return;
+   if (!FileExists(SetupFile)) return;
+
+   TStringList* list = new TStringList();
+
+   ChapterCount = 0;
+   try { list->LoadFromFile(SetupFile); } catch (EFOpenError&) { }
+   if (list->Count) {
+      if (list->Strings[0][1] == 'D') {
+         Directory = list->Values["Directory"];
+         Title = list->Values["Title"];
+         ChapterCount = list->Values["ChapterCount"].ToInt();
+         ChapterNumber = 1;
+         }
+      else {
+         Directory = list->Values["目錄"];
+         Title = list->Values["書名"];
+         ChapterCount = list->Values["章數"].ToInt();
+         AnsiString str = list->Values["章"];
+         if (str.IsEmpty()) ChapterNumber = 1;
+            else ChapterNumber = str.ToInt();
+         }
+      if (ChapterNumber <= 0) ChapterNumber = 1;
+      else if (ChapterNumber > ChapterCount) ChapterNumber = ChapterCount;
+      int length = Directory.Length();
+      if (length > 0 && Directory[length] == '\\') Directory.SetLength(length-1);
+
+      AnsiString path = Directory + "\\";
+      AnsiString name = path + ChapterNumber;
+      name = name + ".txt";
+      fldEditFile->Text = name;
+      ChapterNumberInitial = ChapterNumber;
+      }
+   fldDirectory->Text = Directory;
+   fldTitle->Text = Title;
+   fldChapterCount->Text = ChapterCount;
+
+   delete list;
+
+   SetupFileChanged = false;
+   PdbName = Title;
+
+   }
+
+
+/*----------------------*/
+/* THome::SaveSetupFile */
+/*----------------------*/
+
+void __fastcall THome::SaveSetupFile() {
+
+   if (ChapterNumber != ChapterNumberInitial) SetupFileChanged = true;
+   if (!SetupFileChanged) return;
+
+   TStringList* list = new TStringList();
+   list->Values["目錄"] = Directory;
+   list->Values["書名"] = Title;
+   list->Values["章數"] = ChapterCount;
+   list->Values["章"] = ChapterNumber;
+
+   try { list->SaveToFile(SetupFile); } catch (EFOpenError&) { }
+   delete list;
+
+   SetupFileChanged = false;
+
+   }
+
+
+/*--------------------*/
+/* THome::ValidateINF */
+/*--------------------*/
+
+int __fastcall THome::ValidateINF(AnsiString& name) {
+
+   char* str = name.c_str();
+   int x = strlen(str);
+   if (!x) return false;
+
+   if (x > 4) {
+      if (str[x - 4] == '.') {
+         if ((str[x - 3] != 'i' && str[x - 3] != 'I') ||
+             (str[x - 2] != 'n' && str[x - 2] != 'N') ||
+             (str[x - 1] != 'f' && str[x - 1] != 'F')) {
+             name = name + " 不是好讀的轉檔設定檔！";
+             Application->MessageBox(name.c_str(), "mPDB", MB_OK);
+             return false;
+             }
+         return true;
+         }
+      }
+
+   name = name + ".inf";
+   return true;
+
+   }
+
+//
+// PDB functions
+//
+HANDLE HandleFile;
+short PDBEncrypt;
+char* PDBChapter = NULL;
+int   PDBChapterLength;
+int   PDBChapterSize;
+int   PDBBookLength;
+int   PDBCharIndex;
+int   PDBRecordLength;
+short PDBRecordCount;
+#define MAX_PDB_LIST 4000
+
+
+/*---------------------*/
+/* THome::GetPDBString */
+/*---------------------*/
+
+int __fastcall THome::GetPDBString(char* info) {
+
+   if (PDBCharIndex >= PDBRecordLength) return PDBRecordLength - 1;
+
+   int position = PDBCharIndex;
+   while (PDBCharIndex < PDBRecordLength) {
+      char c = info[PDBCharIndex++];
+      if (c == 27) { info[PDBCharIndex - 1] = 0; break; }
+      if (c == 0) break;
+      }
+   return position;
+
+   }
+
+
+/*---------------------*/
+/* THome::GetPDBNumber */
+/*---------------------*/
+
+int __fastcall THome::GetPDBNumber(char* info) {
+
+   if (PDBCharIndex >= PDBRecordLength) return 0;
+
+   int number = 0;
+   while (PDBCharIndex < PDBRecordLength) {
+      char c = info[PDBCharIndex++];
+      if (c == 27) { info[PDBCharIndex - 1] = 0; break; }
+      if (c == 0) break;
+      c = c - '0';
+      if (0 <= c && c <= 9) {
+         number = number * 10 + c;
+         }
+      }
+   return number;
+
+   }
+
+
+/*---------------------------*/
+/* THome::GetPDBRecordOffset */
+/*---------------------------*/
+
+int __fastcall THome::GetPDBRecordOffset(int i) {
+
+   i = i * 8;
+   char* ptr = &PdbList[i];
+   unsigned char c = ptr[0];
+   int offset = c;
+   for (int k = 1; k <= 3; k++) {
+      c = ptr[k];
+      offset = offset * 256 + c;
+      }
+   return offset;
+
+   }
+
+
+/*-------------------*/
+/* DecryptPDBChapter */
+/*-------------------*/
+
+void __fastcall THome::DecryptPDBChapter() {
+
+   if (!PDBEncrypt) return;
+   int half = ChapterCount / 2;
+   if (ChapterNumber <= half) return;
+
+   if (ChapterNumber == half + 1) {
+      memmove(PDBChapter, &PDBChapter[70], PDBChapterLength - 70);
+      PDBChapterLength -= 70;
+      }
+   
+   for (int i = 0; i < PDBChapterLength - 1; i++) {
+      if (PDBChapter[i] & 0x80) { // Chinese character
+         PDBChapter[i+1] -= 1;
+         i++;
+         }
+      }
+
+   }
+
+
+/*-----------------------*/
+/* THome::LoadPDBChapter */
+/*-----------------------*/
+
+int __fastcall THome::LoadPDBChapter() {
+
+   PDBChapterLength = 0;
+   int number = ChapterNumber + 1;
+   int offset1 = GetPDBRecordOffset(ChapterNumber);
+   int offset2 = GetPDBRecordOffset(number);
+   if (number == PDBRecordCount) offset2 = PDBBookLength;
+
+   if (offset1 > PDBBookLength) return false;
+   if (offset2 <= offset1) return false;
+
+   PDBChapterLength = offset2 - offset1 - 1;
+   int result = SetFilePointer(HandleFile, offset1, NULL, FILE_BEGIN);
+   if (result == -1) return false;
+
+   if (ChapterNumber == 0) PDBChapterLength++;  // To include terminating 0.
+   if (ChapterNumber == ChapterCount + 1) PDBChapterLength++; // Bookmarks
+   if (PDBChapterSize < PDBChapterLength) {
+      int size = PDBChapterLength + 255;
+      if (PDBChapterSize > 0) delete[] PDBChapter;
+      PDBChapter = new char[size];
+      PDBChapterSize = size;
+      }
+   PDBRecordLength = PDBChapterLength;
+
+   DWORD amount;
+   int read = ReadFile(HandleFile, PDBChapter, PDBChapterLength, &amount, NULL);
+   if (!read) { PDBChapterLength = 0; return false; }
+   PDBCharIndex = 0;
+
+   DecryptPDBChapter();
+
+   return true;
+
+   }
+
+
+/*-----------------------*/
+/* THome::SavePDBChapter */
+/*-----------------------*/
+
+void __fastcall THome::SavePDBChapter() {
+
+   AnsiString path = Directory + "\\";
+   AnsiString name = path + ChapterNumber;
+   name = name + ".txt";
+
+   HANDLE file = CreateFile(name.c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+      FILE_ATTRIBUTE_NORMAL, NULL);
+   if (file == INVALID_HANDLE_VALUE) { CloseHandle(file); return; }
+   DWORD amount;
+   WriteFile(file, (const void*) &PDBChapter[0], PDBChapterLength, &amount, NULL);
+   CloseHandle(file);
+
+   }
+
+
+/*--------------------*/
+/* THome::LoadPDBBook */
+/*--------------------*/
+
+int __fastcall THome::LoadPDBBook(AnsiString& name) {
+
+   Get_Book:
+
+      HandleFile = CreateFile(name.c_str(), GENERIC_READ, 0, NULL, OPEN_EXISTING,
+         FILE_ATTRIBUTE_NORMAL, NULL);
+      if (HandleFile == INVALID_HANDLE_VALUE) return false;
+
+   Get_Book_Size:
+
+      PDBBookLength = GetFileSize(HandleFile, NULL);
+      if (PDBBookLength <= 0) return false;
+
+   Get_Record_Count:
+
+      char header[80]; DWORD amount;
+      int read = ReadFile(HandleFile, header, 76, &amount, NULL);
+      if (!read) return false;
+      if (header[64] != 'M') return false;
+      if (header[65] != 'T') return false;
+      if (header[66] != 'I') return false;
+      if (header[67] != 'T') return false;
+
+      unsigned char temp[2];
+      read = ReadFile(HandleFile, temp, 2, &amount, NULL);
+      if (!read) return false;
+
+   Get_Pdb_Record_List:
+
+      int count = temp[0] * 256 + temp[1];
+      count = count * 8;
+      if (count > MAX_PDB_LIST) return false;
+      read = ReadFile(HandleFile, PdbList, count, &amount, NULL);
+      if (!read) return false;
+
+   Get_Book_Info:
+
+      ChapterNumber = 0;
+      PDBChapterSize = 0;
+      LoadPDBChapter();
+      PDBEncrypt = (PDBChapter[0] == ' ') ? false : PDBChapter[0];
+      PDBCharIndex = 8;
+      GetPDBString(PDBChapter);
+      char* str = &PDBChapter[8];
+      int length = strlen(str) + 1;
+      if (length == 1) return false;
+
+      Title = str;
+      GetPDBString(PDBChapter);   // Load Info
+      GetPDBString(PDBChapter);   // Load Secret
+      ChapterCount = GetPDBNumber(PDBChapter);
+
+      return true;
+
+   }
+
+
+/*------------------------*/
+/* THome::ExportTextFiles */
+/*------------------------*/
+
+void __fastcall THome::ExportTextFiles() {
+
+   Export_Text_Files:
+
+      for (ChapterNumber = 1; ChapterNumber <= ChapterCount; ChapterNumber++) {
+         LoadPDBChapter();
+         SavePDBChapter();
+         }
+
+   Export_Text_0:
+
+      ChapterNumber = 0;
+      LoadPDBChapter();
+
+      AnsiString path = Directory + "\\";
+      AnsiString name = path + ChapterNumber;
+      name = name + ".txt";
+
+      HANDLE file = CreateFile(name.c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+         FILE_ATTRIBUTE_NORMAL, NULL);
+      if (file == INVALID_HANDLE_VALUE) { CloseHandle(file); return; }
+      DWORD amount;
+      char* title;
+      char* newln = "\r\n";
+      PDBCharIndex = 0;
+      for (int k = 0; k < 4; k++) GetPDBString(PDBChapter);
+      for (int i = 1; i <= ChapterCount; i++) {
+         title = &PDBChapter[GetPDBString(PDBChapter)];
+         WriteFile(file, (const void*) title, strlen(title), &amount, NULL);
+         if (i < ChapterCount)
+            WriteFile(file, (const void*) newln, 2, &amount, NULL);
+         }
+      CloseHandle(file);
+
+   }
+
+
+/*---------------------*/
+/* THome::btnOpenClick */
+/*---------------------*/
+
+void __fastcall THome::btnOpenClick(TObject *Sender) {
+
+   TOpenDialog* dialog = new TOpenDialog(this);
+   dialog->Title = "開啟好讀轉檔設定檔，或好讀書檔";
+   dialog->FileName = fldSetupFile->Text;
+   dialog->Filter = "轉檔設定檔 (*.inf)，好讀書檔 (*.pdb)|*.INF;*.PDB";
+
+   bool ret = dialog->Execute();
+   AnsiString name;
+   if (ret) name = dialog->FileName;
+   delete dialog;
+   if (!ret) return;
+
+   if (!FileExists(name)) {
+      name = " 找不到！" + name;
+      Application->MessageBox(name.c_str(), "mPDB", MB_OK);
+      return;
+      }
+
+   char* str = name.c_str();
+   int x = strlen(str);
+   if (x <= 4) {
+      Application->MessageBox(" 沒有檔案名", "mPDB", MB_OK);
+      return;
+      }
+   if (str[x - 4] != '.') {
+      Application->MessageBox(" 沒有副檔案名", "mPDB", MB_OK);
+      return;
+      }
+   if ((str[x - 3] == 'i' || str[x - 3] == 'I') &&
+      (str[x - 2] == 'n' || str[x - 2] == 'N') &&
+      (str[x - 1] == 'f' || str[x - 1] == 'F')) {
+      fldSetupFile->Text = name;
+      SetupFileChanged = true;
+      return;
+      }
+   if ((str[x - 3] == 'p' || str[x - 3] == 'P') &&
+      (str[x - 2] == 'd' || str[x - 2] == 'D') &&
+      (str[x - 1] == 'b' || str[x - 1] == 'B')) {
+      AnsiString msg = "擷取" + name + "中的純文字檔？";
+      if (Application->MessageBox(msg.c_str(), "mPDB", MB_OKCANCEL) != IDOK) return;
+      if (!LoadPDBBook(name)) return;
+
+      x = name.LastDelimiter("\\");
+      if (x > 0) {
+         str[x-1] = 0;
+         Directory = str;
+         }
+
+      fldDirectory->Text = Directory;
+      fldTitle->Text = Title;
+      fldChapterCount->Text = ChapterCount;
+
+      ExportTextFiles();
+
+      ChapterNumber = 1;
+      AnsiString path = Directory + "\\";
+      AnsiString name = path + ChapterNumber;
+      name = name + ".txt";
+      fldEditFile->Text = name;
+      ChapterNumberInitial = ChapterNumber;
+
+      name = path + Title + ".inf";
+      SavingSetupFile = true;
+      fldSetupFile->Text = name;
+
+      CloseHandle(HandleFile);
+      return;
+      }
+
+   name = name + " 不是好讀的轉檔設定檔，也不是書檔！";
+   Application->MessageBox(name.c_str(), "mPDB", MB_OK);
+
+   }
+
+
+/*---------------------*/
+/* THome::btnSaveClick */
+/*---------------------*/
+
+void __fastcall THome::btnSaveClick(TObject *Sender) {
+
+   if (!SetupFile.Length()) btnSaveAsClick(Sender);
+   else SaveSetupFile();
+
+   }
+
+
+/*-----------------------*/
+/* THome::btnSaveAsClick */
+/*-----------------------*/
+
+void __fastcall THome::btnSaveAsClick(TObject *Sender) {
+
+   TOpenDialog* dialog = new TSaveDialog(this);
+   dialog->Title = "另存好讀轉檔設定檔";
+   dialog->FileName = fldSetupFile->Text;
+   dialog->Filter = "好讀轉檔設定檔 (*.inf)|*.INF";
+   if (dialog->Execute()) {
+      AnsiString name = dialog->FileName;
+      if (ValidateINF(name)) {
+         SavingSetupFile = true;
+         fldSetupFile->Text = name;
+         }
+      }
+   delete dialog;
+
+   }
+
+
+/*-------------------------*/
+/* THome::btnPrevBookClick */
+/*-------------------------*/
+
+void __fastcall THome::btnPrevBookClick(TObject *Sender) {
+
+   int length = SetupFile.Length();
+   if (length < 5) return;
+
+   AnsiString temp = SetupFile;
+   char digit = temp[length - 4];
+   if (!('0' <= digit && digit <= '9')) return;
+   digit--;
+   if (digit >= '1') temp[length - 4] = digit;
+   else {
+      char c = temp[length - 5];
+      if (!('1' <= c && c < '9')) return;
+      if (digit == '0') temp[length - 4] = '0';
+      else {
+         temp[length - 4] = '9';
+         if (c >= '2') temp[length - 5] = --c;
+         else temp.Delete(length - 5, 1);
+         }
+      }
+
+   fldSetupFile->Text = temp;
+
+   }
+
+
+/*-------------------------*/
+/* THome::btnNextBookClick */
+/*-------------------------*/
+
+void __fastcall THome::btnNextBookClick(TObject *Sender) {
+
+   int length = SetupFile.Length();
+   if (length < 5) return;
+
+   AnsiString temp = SetupFile;
+   char digit = temp[length - 4];
+   if (!('0' <= digit && digit <= '9')) return;
+   digit++;
+   if (digit <= '9') temp[length - 4] = digit;
+   else {
+      temp[length - 4] = '0';
+      char c = temp[length - 5];
+      if ('1' <= c && c < '9') temp[length - 5] = ++c;
+      else temp.Insert("1", length - 4);
+      }
+   if (!FileExists(temp)) {
+      temp[length - 4] = '1';
+      char c = temp[length - 5];
+      if ('0' <= c && c <= '9') temp.Delete(length - 5, 1);
+      }
+
+   fldSetupFile->Text = temp;
+
+   }
+
+
+/*-----------------------*/
+/* THome::LogReplacement */
+/*-----------------------*/
+
+void __fastcall THome::LogReplacement(int j, int length, char* target) {
+
+   AnsiString path = Directory + "\\log.txt";
+   OFSTRUCT of;
+   HFILE file = OpenFile(path.c_str(), &of, OF_WRITE);
+   if (file == -1) { 
+      file = OpenFile(path.c_str(), &of, OF_CREATE);
+      if (file == -1) { _lclose(file); return; }
+      }
+
+   char temp[100];
+   int size = Buffer.Length();
+   char source[100];
+   int start = j - 4;
+   if (start < 1) start = j;
+   int tail = j + length + 7;
+   if (tail > size) tail = size;
+   int i = 0;
+   for (int d = start; d <= tail; d++) {
+      source[i] = Buffer[d];
+      i++;
+      }
+   source[i] = 0;
+
+   sprintf(temp, "%d:%d:%d %s/%s\r\n", ChapterNumber, j, size,
+      source, target);
+   _llseek(file, 0L, FILE_END);
+   _lwrite(file, temp, strlen(temp));
+   _lclose(file);
+
+   }
+
+
+/*---------------------*/
+/* THome::btnExitClick */
+/*---------------------*/
+
+void __fastcall THome::btnExitClick(TObject *Sender) {
+
+   Close();
+
+   }
+
+
+/*---------------------*/
+/* THome::LoadEditFile */
+/*---------------------*/
+
+void __fastcall THome::LoadEditFile() {
+
+   if (!EditFile.Length()) return;
+
+   Buffer.SetLength(0);
+   HFILE file = _lopen(EditFile.c_str(), OF_READ);
+   if (file != HFILE_ERROR) {
+      int length =_llseek(file, 0L, 2);
+      Buffer.SetLength(length);
+      _llseek(file, 0L, 0);
+      _lread(file, Buffer.c_str(), length);
+      }
+   Memo1->Text = Buffer;
+   Memo1->Modified = false;
+   _lclose(file);
+
+   }
+
+
+/*---------------------*/
+/* THome::SaveEditFile */
+/*---------------------*/
+
+void __fastcall THome::SaveEditFile() {
+
+   if (!EditFile.Length()) return;
+
+   AnsiString temp = EditFile;
+   int i = temp.LastDelimiter("\\" );
+   AnsiString name = temp.SubString(i+1, temp.Length() - i);
+   temp.SetLength(i);
+   if (!DirectoryExists(temp)) {
+      temp = "目錄 " + temp + " 不存在，無法儲存！";
+      Application->MessageBox(temp.c_str(), "mPDB", MB_OK);
+      return;
+      }
+
+   ShowWaitCursor();
+   AnsiString backup_dir = temp + "backup\\";
+   AnsiString backup_name = backup_dir + name;
+   if (!DirectoryExists(backup_dir)) CreateDir(backup_dir);
+   CopyFileTo(EditFile, backup_name);
+
+   OFSTRUCT of;
+   HFILE file = OpenFile(EditFile.c_str(), &of, OF_CREATE);
+   if (file == -1) {
+      _lclose(file);
+      temp = "無法開啟 " + EditFile;
+      Application->MessageBox(temp.c_str(), "mPDB", MB_OK);
+      RestoreCursor();
+      return;
+       }
+   _lwrite(file, &Memo1->Text[1], Memo1->Text.Length());
+   _lclose(file);
+   Memo1->Modified = false;
+
+   RestoreCursor();
+
+   }
+
+
+/*-----------------------------*/
+/* THome::btnSaveEditFileClick */
+/*-----------------------------*/
+
+void __fastcall THome::btnSaveFileClick(TObject *Sender) {
+
+   SaveEditFile();
+
+   }
+
+
+/*-------------------------*/
+/* THome::SetChapterNumber */
+/*-------------------------*/
+
+void __fastcall THome::SetChapterNumber() {
+
+   AnsiString name = fldEditFile->Text.c_str();
+   int length = name.Length();
+   name.Delete(1, Directory.Length());
+   if (name[1] == '\\') name.Delete(1, 1);
+   name.SetLength(name.Length() - 4);
+   length = name.Length();
+   for (int i = 1; i <= length; i++) {
+      if (name[i] < '0') return;
+      if (name[i] > '9') return;
+      }
+   ChapterNumber = name.ToInt();
+
+   }
+
+
+/*-------------------------*/
+/* THome::btnEditFileClick */
+/*-------------------------*/
+
+void __fastcall THome::btnEditFileClick(TObject *Sender) {
+
+   TOpenDialog* dialog = new TOpenDialog(this);
+   dialog->Title = "選擇文字檔";
+   dialog->FileName = fldEditFile->Text;
+   if (dialog->Execute()) {
+      if (!EditFile.AnsiCompare(dialog->FileName)) LoadEditFile();
+      fldEditFile->Text = dialog->FileName;
+      if (SetupFile.Length()) SetChapterNumber();
+      }
+   delete dialog;    
+
+   }
+
+
+/*--------------------------*/
+/* THome::fldEditFileChange */
+/*--------------------------*/
+
+void __fastcall THome::fldEditFileChange(TObject *Sender) {
+
+   EditFile = fldEditFile->Text;
+   SetChapterNumber();
+   LoadEditFile();
+   SetupFileChanged = true;
+
+   }
+
+
+/*-----------------------*/
+/* THome::btnSwitchClick */
+/*-----------------------*/
+
+void __fastcall THome::btnSwitchClick(TObject *Sender) {
+
+   PlateModeSwitched = 1 - PlateModeSwitched;
+   TButton* button = (TButton*) Sender;
+   if (PlateModeSwitched) button->Caption = "字盤";
+   else button->Caption = "設定";
+   DrawPlateLine();
+
+   }
+
+
+/*----------------------*/
+/* THome::btnInsertChar */
+/*----------------------*/
+
+void __fastcall THome::btnInsertChar(TObject *Sender) {
+
+   TButton* button = (TButton*) Sender;
+   if (PlateModeSwitched) {
+      char buffer[101];
+      Memo1->GetSelTextBuf(buffer, 101);
+      button->Caption = buffer;
+      SavePlate();
+      return;
+      }
+   Memo1->SetFocus();
+   Memo1->SelText = button->Caption;
+
+   }
+
+
+/*--------------------*/
+/* THome::ReplaceChar */
+/*--------------------*/
+
+void __fastcall THome::ReplaceChar() {
+
+   int length1 = SourceStr.Length();
+   int length2 = TargetStr.Length();
+
+   if (length1 == 0) return;
+   int chinese = SourceStr[1] & 0x80;
+
+   int next = ExcludeNext.Length();
+   int prev = ExcludePrev.Length();
+
+   GetChapterSizes();
+   for (int i = ChapterNumber; i <= ChapterCount; i++) {
+      int changed = 0;
+      int start = 1;
+      int index = 0;
+      if (ResumePosition >= 0 && ChapterNumber == i) {
+         Buffer = Memo1->Text;
+         start = ResumePosition;
+         if (start < 1) start = 1;
+         }
+      else {
+         LoadChapter(i);
+         ResumePosition = 0;
+         Memo1->Text = Buffer;
+         Memo1->Refresh();
+         Memo1->Modified = false;
+         fldEditFile->Text = EditChapter;
+         fldEditFile->Refresh();
+         }
+      for (int j = start; j <= Buffer.Length(); j++) {
+         if (!(Buffer[j] & 0x80)) { if (chinese) continue; }
+         else if (!chinese) { j++; continue; }
+         if (j > Buffer.Length() - length1) break;
+         int k = 0;
+         char* source = SourceStr.c_str();
+         while (k < length1) {
+            if (Buffer[j+k] != source[k]) break;
+            k++;
+            }
+         if (k < length1) {
+            if (chinese) j++;
+            continue;
+            }
+
+         if (next) {
+            char c = Buffer[j+2];
+            char d = Buffer[j+3];
+            int found = false;
+            for (int i = 1; i <= next; i++) {
+                if (c == ExcludeNext[i] && d == ExcludeNext[i+1]) {
+                   found = true;
+                   break;
+                   }
+                i++;
+                }
+            if (found) continue;
+            }
+
+         if (prev) {
+            char c = Buffer[j-2];
+            char d = Buffer[j-1];
+            int found = false;
+            for (int i = 1; i <= prev; i++) {
+                if (c == ExcludePrev[i] && d == ExcludePrev[i+1]) {
+                   found = true;
+                   break;
+                   }
+                i++;
+                }
+            if (found) continue;
+            }
+
+         Memo1->SelStart = j - 1;
+         Memo1->SelLength = length1;
+
+         SetupFilePrev = SetupFileTemp;
+         EditFilePrev = EditFileTemp;
+         SelStartPrev = SelStartTemp;
+         SelLengthPrev = SelLengthTemp;
+
+         SetupFileTemp = SetupFile;
+         EditFileTemp = EditFile;
+         SelStartTemp = Memo1->SelStart;
+         SelLengthTemp = Memo1->SelLength;
+
+         int answer = IDYES;
+         if (ReplacePrompt) {
+            char message[100];
+            sprintf(message, "將 %s 換成 %s?", SourceStr.c_str(), TargetStr.c_str());
+            answer = Application->MessageBox(message, "取代",
+                MB_YESNOCANCEL);
+            }
+         char* target = TargetStr.c_str();
+         if (answer == IDYES) {
+            Memo1->SetSelTextBuf(target);
+            LogReplacement(j, length1, target);
+            changed++;
+            Buffer.Delete(j, length1);
+            if (length2) {
+               Buffer.Insert(target, j);
+               j = j + length2 - 1;
+               }
+            }
+         else if (answer == IDNO) { j++; continue; }
+         else {
+             if (changed) {
+               int length = Buffer.Length() + 1;
+               Buffer.SetLength(length);
+               SaveChapter(i);
+               changed = false;
+               Memo1->Modified = false;
+               }
+            return;
+            }
+         }
+
+      if (changed) {
+         int length = Buffer.Length() + 1;
+         Buffer.SetLength(length);
+         SaveChapter(i);
+         changed = false;
+         Memo1->Modified = false;
+         }
+      }
+
+   }
+
+
+/*-----------------------*/
+/* THome::btnReplaceChar */
+/*-----------------------*/
+
+void __fastcall THome::btnReplaceChar(TObject *Sender) {
+
+   CheckModified();
+   TButton* button = (TButton*) Sender;
+   Memo1->SetFocus();
+   AnsiString& caption = button->Caption;
+
+   int pos = button->Hint.Pos("//");
+   if (pos == 0) {
+      ExcludeNext = button->Hint;
+      ExcludePrev.SetLength(0);
+      }
+   else {
+      ExcludeNext = button->Hint.SubString(1, pos - 1);
+      ExcludePrev = button->Hint.SubString(pos + 2, button->Hint.Length() - pos - 1);
+      }
+
+   int i = caption.AnsiPos("/");
+   if (i == 0) return;
+
+   SourceStr = caption.SubString(1, i-1);
+   TargetStr = caption.SubString(i+1, caption.Length() - i);
+
+   if (ChapterCount > 0) {
+      ChapterNumber = 1;
+      ResumePosition = -1;
+      }
+
+   ReplacePrompt = true;
+   ReplaceChar();
+
+   }
+
+
+/*---------------------------*/
+/* THome::btnSearchDownClick */
+/*---------------------------*/
+
+void __fastcall THome::btnSearchDownClick(TObject *Sender) {
+
+   CheckModified();
+   Memo1->SetFocus();
+
+   SourceStr = fldSource->Text;
+   TargetStr = fldTarget->Text;
+
+   if (ChapterCount > 0) {
+      ChapterNumber = 1;
+      ResumePosition = -1;
+      }
+
+   ExcludeNext.SetLength(0);
+   ExcludePrev.SetLength(0);
+   ReplacePrompt = (CheckBox3->Checked) ? false : true;
+   ReplaceChar();
+
+   }
+
+
+/*-------------------------*/
+/* THome::btnSearchUpClick */
+/*-------------------------*/
+
+void __fastcall THome::btnSearchUpClick(TObject *Sender) {
+
+   CheckModified();
+   if (SetupFile.AnsiCompare(SetupFilePrev)) {
+      fldSetupFile->Text = SetupFilePrev;
+      }
+
+   EditFile = EditFilePrev;
+   fldEditFile->Text = EditFile;
+
+   Memo1->SelStart = SelStartPrev;
+   Memo1->SelLength = SelLengthPrev;
+
+   }
+
+
+/*-----------------------*/
+/* THome::btnResumeClick */
+/*-----------------------*/
+
+void __fastcall THome::btnResumeClick(TObject *Sender) {
+
+   if (!SetupFile.Length()) return;
+   if (!fldEditFile->Text.Length()) return;
+
+   SourceStr = fldSource->Text;
+   TargetStr = fldTarget->Text;
+
+   if (SourceStr.IsEmpty()) return;
+
+   ReplacePrompt = (CheckBox3->Checked) ? false : true;
+   ResumePosition = Memo1->SelStart;
+   ReplaceChar();
+
+   }
+
+
+/*----------------------*/
+/* THome::PreviewWindow */
+/*----------------------*/
+int LeftbtnSave;
+int LeftbtnExit;
+int LeftSwitch;
+int LeftTabControl2;
+int LeftTabControl3;
+int LeftPanel;
+
+void __fastcall THome::PreviewWindow() {
+
+   LeftbtnSave = btnSave->Left;
+   btnSave->Left = 2;
+   btnSave->Hide();
+
+   LeftbtnExit = btnExit->Left;
+   btnExit->Left = 2;
+   btnExit->Hide();
+
+   if (PlateNumber > 0) {
+      LeftSwitch = btnSwitch->Left;
+      btnSwitch->Left= 2;
+      btnSwitch->Hide();
+      LeftTabControl2 = TabControl2->Left;
+      TabControl2->Left= 2;
+      TabControl2->Hide();
+      }
+
+   LeftTabControl3 = TabControl3->Left;
+   TabControl3->Left = 2;
+   TabControl3->Hide();
+
+   btnSetupFile->Hide();
+   btnDirectory->Hide();
+   btnPrevBook->Hide();
+   btnNextBook->Hide();
+   Button1->Hide();
+   btnSave->Hide();
+   fldSetupFile->Hide();
+   fldDirectory->Hide();
+   fldTitle->Hide();
+   fldChapterCount->Hide();
+
+   if (PlateNumber == 0) {
+      LeftPanel = Panel1->Left;
+      Panel1->Left = 2;
+      Panel1->Hide();
+      }
+   else if (PlateNumber == 1) {
+      LeftPanel = Panel1->Left;
+      Panel2->Left = 2;
+      Panel2->Hide();
+      }
+   else if (PlateNumber == 2) {
+      LeftPanel = Panel1->Left;
+      Panel3->Left = 2;
+      Panel3->Hide();
+      }
+   else if (PlateNumber == 3) {
+      LeftPanel = Panel1->Left;
+      Panel4->Left = 2;
+      Panel4->Hide();
+      }
+
+   Panel5->Hide();
+
+   if (!Panel) InitPanel();
+   Memo1->Hide();
+   Width = PreviewWidth;
+   Panel->ShowChapter(false);
+   Panel->Show();
+   Panel->SetFocus();
+
+   }
+
+
+/*--------------------*/
+/* THome::RestoreMemo */
+/*--------------------*/
+
+void __fastcall THome::RestoreMemo() {
+
+   Preview = false;
+
+   Width = WindowWidth;
+
+   btnSave->Left = LeftbtnSave;
+   btnSave->Show();
+
+   btnExit->Left = LeftbtnExit;
+   btnExit->Show();
+
+   if (PlateNumber > 0) {
+      btnSwitch->Left = LeftSwitch;
+      btnSwitch->Show();
+      TabControl2->Left= LeftTabControl2;
+      TabControl2->Show();
+      }
+
+   TabControl3->Left = LeftTabControl3;
+   TabControl3->Show();
+
+   btnSetupFile->Show();
+   btnDirectory->Show();
+   btnPrevBook->Show();
+   btnNextBook->Show();
+   Button1->Show();
+   btnSave->Show();
+   fldSetupFile->Show();
+   fldDirectory->Show();
+   fldTitle->Show();
+   fldChapterCount->Show();
+
+   if (PlateNumber == 0) {
+      Panel1->Left = LeftPanel;
+      Panel1->Show();
+      }
+   else if (PlateNumber == 1) {
+      Panel2->Left = LeftPanel;
+      Panel2->Show();
+      }
+   else if (PlateNumber == 2) {
+      Panel3->Left = LeftPanel;
+      Panel3->Show();
+      }
+   else if (PlateNumber == 3) {
+      Panel4->Left = LeftPanel;
+      Panel4->Show();
+      }
+
+   Panel5->Show();
+
+   Panel->Hide();
+   Memo1->Show();
+   Panel->SetSelStart();
+   Memo1->SetFocus();
+
+   }
+
+
+/*------------------------*/
+/* THome::btnPreviewClick */
+/*------------------------*/
+
+void __fastcall THome::btnPreviewClick(TObject *Sender) {
+
+   TButton* button = (TButton*) Sender;
+   Preview = 1- Preview;
+   if (!Preview) {
+      RestoreMemo();
+      return;
+      }
+
+   PreviewWindow();
+
+   }
+
+
+/*--------------------*/
+/* THome::PrevChapter */
+/*--------------------*/
+
+void __fastcall THome::PrevChapter(int last) {
+
+   CheckModified();
+   if (ChapterCount == 0) return;
+   if (ChapterNumber == 0) ChapterNumber = 1;
+   else {
+      ChapterNumber--;
+      if (ChapterNumber < 1) ChapterNumber = ChapterCount;
+      }
+
+   AnsiString path = Directory + "\\";
+   AnsiString name = path + ChapterNumber;
+   name = name + ".txt";
+   if (!EditFile.AnsiCompare(name)) LoadEditFile();
+   fldEditFile->Text = name;
+
+   if (Preview) {
+      if (last) Panel->ShowChapter(last);
+      else {
+         Panel->ShowChapter(false);
+         Panel->ShowPage(0);
+         }
+      }
+
+   }
+
+
+/*----------------------------*/
+/* THome::btnPrevChapterClick */
+/*----------------------------*/
+
+void __fastcall THome::btnPrevChapterClick(TObject *Sender) {
+
+   PrevChapter(false);
+
+   }
+
+
+/*--------------------*/
+/* THome::NextChapter */
+/*--------------------*/
+
+void __fastcall THome::NextChapter() {
+
+   CheckModified();
+   if (ChapterCount == 0) return;
+   if (ChapterNumber == 0) ChapterNumber = 1;
+   else {
+      ChapterNumber++;
+      if (ChapterNumber > ChapterCount) ChapterNumber = 1;
+      }
+
+   AnsiString path = Directory + "\\";
+   AnsiString name = path + ChapterNumber;
+   name = name + ".txt";
+   if (!EditFile.AnsiCompare(name)) LoadEditFile();
+   fldEditFile->Text = name;
+
+   if (Preview) {
+      Panel->ShowChapter(false);
+      Panel->ShowPage(0);
+      }
+
+   }
+
+
+/*----------------------------*/
+/* THome::btnNextChapterClick */
+/*----------------------------*/
+
+void __fastcall THome::btnNextChapterClick(TObject *Sender) {
+
+   NextChapter();
+
+   }
+
+
+/*--------------------------*/
+/* THome::btnDirectoryClick */
+/*--------------------------*/
+
+void __fastcall THome::btnDirectoryClick(TObject *Sender) {
+
+   AnsiString dir;
+   AnsiString caption = "選擇目錄";
+   if (!SelectDirectory(caption, "", dir)) return;
+
+   fldDirectory->Text = dir;
+
+   }
+
+
+/*--------------------------*/
+/* THome::ValidateSetupData */
+/*--------------------------*/
+
+int __fastcall THome::ValidateSetupData() {
+
+   if (fldDirectory->Text.IsEmpty()) {
+      Application->MessageBox("請輸入目錄", "mPDB", MB_OK);
+      fldDirectory->SetFocus();
+      return false;
+      }
+
+   if (fldTitle->Text.IsEmpty()) {
+      Application->MessageBox("請輸入書名", "mPDB", MB_OK);
+      fldTitle->SetFocus();
+      return false;
+      }
+
+   if (!ChapterCount) {
+      Application->MessageBox("請輸入章數", "mPDB", MB_OK);
+      fldChapterCount->SetFocus();
+      return false;
+      }
+
+   return true;
+
+   }
+
+
+/*----------------------*/
+/* THome::btnPasteClick */
+/*----------------------*/
+
+void __fastcall THome::btnPasteClick(TObject *Sender) {
+
+   int length = Memo1->SelLength;
+   if (!length) return;
+
+   char buffer[101];
+   Memo1->GetSelTextBuf(buffer, 101);
+   fldSource->Text = buffer;
+   fldTarget->Text = buffer;
+
+   btnSavePositionClick(Sender);
+
+   }
+
+
+/*-----------------------------*/
+/* THome::btnSavePositionClick */
+/*-----------------------------*/
+
+void __fastcall THome::btnSavePositionClick(TObject *Sender) {
+
+   SetupFileSaved = SetupFile;
+   EditFileSaved = EditFile;
+   SelStartSaved = Memo1->SelStart;
+   SelLengthSaved = Memo1->SelLength;
+   ChapterNumberSaved = ChapterNumber;
+
+   }
+
+
+/*--------------------------------*/
+/* THome::btnRestorePositionClick */
+/*--------------------------------*/
+
+void __fastcall THome::btnRestorePositionClick(TObject *Sender) {
+
+   CheckModified();
+   if (SetupFileSaved.IsEmpty()) return;
+   if (SetupFile.AnsiCompare(SetupFileSaved)) {
+      fldSetupFile->Text = SetupFileSaved;
+      }
+
+   if (EditFileSaved.IsEmpty()) return;
+   if (ChapterNumberSaved == 0) return;
+
+   EditFile = EditFileSaved;
+   fldEditFile->Text = EditFile;
+
+   Memo1->SelStart = SelStartSaved;
+   Memo1->SelLength = SelLengthSaved;
+   ChapterNumber = ChapterNumberSaved;
+
+   }
+
+
+/*-----------------------------*/
+/* THome::btnConvertMarksClick */
+/*-----------------------------*/
+
+void __fastcall THome::btnConvertMarksClick(TObject *Sender) {
+char source[56] = "「」『』《》（）【】｛｝〔〕〈〉－─“”‘’﹑＜＞～—…";
+char target[56] = "﹁﹂﹃﹄︽︾︵︶︻︼︷︸︹︺︿﹀｜｜﹁﹂﹃﹄、︿﹀至｜｜";
+
+   CheckModified();
+   if (!ValidateSetupData()) return;
+   if (!GetChapterSizes()) return;
+
+   if (Application->MessageBox("轉成直式標點符號？",
+      "mPDB", MB_OKCANCEL) != IDOK) return;
+
+   ShowWaitCursor();
+   int number = ChapterNumber;
+   int changed = 0;
+   int head;  // "xx" -> ﹁xx﹂
+   int head1; // 'xx' -> ﹃xx﹄
+   for (int i = 1; i <= ChapterCount; i++) {
+      head = 1;
+      LoadChapter(i);
+      for (int j = 1; j <= Buffer.Length(); j++) {
+         char c = Buffer[j];
+         if (c & 0x80) { // Chinese character
+            for (int k = 0; k < 56; k = k + 2) {
+               if (c == source[k] && Buffer[j+1] == source[k+1]) {
+                  Buffer[j] = target[k];
+                  Buffer[j+1] = target[k+1];
+                  changed++;
+                  break;
+                  }
+               }
+            j++;
+            }
+         else if (c == '"') {
+            if (head) {
+               Buffer[j++] = target[0];
+               Buffer.Insert(target[1], j);
+               }
+            else {
+               Buffer[j++] = target[2];
+               Buffer.Insert(target[3], j);
+               }
+            head = 1 - head;
+            changed++;
+            }
+         else if (c == '\'') {
+            if (head1) {
+               Buffer[j++] = target[4];
+               Buffer.Insert(target[5], j);
+               }
+            else {
+               Buffer[j++] = target[6];
+               Buffer.Insert(target[7], j);
+               }
+            head1 = 1 - head1;
+            changed++;
+            }
+         else if (c == '\n') {
+            head = 1;
+            head1 = 1;
+            }
+         }
+      if (changed) SaveChapter(i);
+      }
+
+   ChapterNumber = number;
+   RestoreCursor();
+   EditFile = fldEditFile->Text;
+   LoadEditFile();
+   Application->MessageBox("直式標點符號轉好了！", "mPDB", MB_OK);
+ 
+   }
+   
+
+/*------------------------*/
+/* THome::btnConvertClick */
+/*------------------------*/
+
+void __fastcall THome::btnConvertClick(TObject *Sender) {
+
+   CheckModified();
+   if (!ValidateSetupData()) return;
+   if (!GetChapterSizes()) return;
+
+   if (Application->MessageBox("轉成好讀PDB檔？",
+      "mPDB", MB_OKCANCEL) != IDOK) return;
+
+   ShowWaitCursor();
+   int number = ChapterNumber;
+   SetPdbHeader();
+   SetPdbBookInfo();
+   WritePdb();
+   ChapterNumber = number;
+   RestoreCursor();
+
+   Application->MessageBox("轉成好讀PDB檔了！", "mPDB", MB_OK);
+
+   }
+
+
+/*---------------------*/
+/* THome::btnFontClick */
+/*---------------------*/
+
+void __fastcall THome::btnFontClick(TObject *Sender) {
+
+   TFontDialog* dialog = new TFontDialog(this);
+   dialog->Font->Name = Memo1->Font->Name;
+   dialog->Font->Size = Memo1->Font->Size;
+   dialog->Font->Style = Memo1->Font->Style;
+   if (!dialog->Execute()) return;
+   Memo1->Font->Name = dialog->Font->Name;
+   Memo1->Font->Size = dialog->Font->Size;
+   Memo1->Font->Style = dialog->Font->Style;
+   Panel->SetPageFont();
+   SetupChanged = true;
+
+   }
+
+
+/*--------------------------------*/
+/* THome::btnRemoveSoftBreakClick */
+/*--------------------------------*/
+
+void __fastcall THome::btnRemoveSoftBreakClick(TObject *Sender) {
+
+   CheckModified();
+   if (!ValidateSetupData()) return;
+   if (!GetChapterSizes()) return;
+
+   if (Application->MessageBox("刪除段落中之斷行？",
+      "mPDB", MB_OKCANCEL) != IDOK) return;
+
+   ShowWaitCursor();
+   int number = ChapterNumber;
+   AnsiString space = "　";
+   for (int i = 1; i <= ChapterCount; i++) {
+      LoadChapter(i);
+      int changed = false;
+      int newln = false;
+      for (int j = 1; j <= Buffer.Length(); j++) {
+         if (Buffer[j] == '\n') { newln = true; continue; }
+         if (Buffer[j] != '\r') { newln = false; continue; }
+         if (newln) continue;
+         if (j + 3 <= Buffer.Length()) {
+            if (Buffer[j+1] != '\n') continue;
+            if (Buffer[j+2] == '\r') continue;
+            if (Buffer[j+2] == '\t') continue;
+            if (Buffer[j+2] == ' ') continue;
+            if (Buffer[j+2] == space[1] && Buffer[j+3] == space[2]) continue;
+            Buffer.Delete(j, 2);
+            newln = false;
+            changed++;
+            }
+         }
+      if (changed) SaveChapter(i);
+      }
+
+   ChapterNumber = number;
+   RestoreCursor();
+   EditFile = fldEditFile->Text;
+   LoadEditFile();
+   Application->MessageBox("段落中之斷行刪除了！", "mPDB", MB_OK);
+
+   }
+
+
+/*-------------------------*/
+/* THome::btnAddSpaceClick */
+/*-------------------------*/
+
+void __fastcall THome::btnAddSpaceClick(TObject *Sender) {
+
+   CheckModified();
+   if (!ValidateSetupData()) return;
+   if (!GetChapterSizes()) return;
+
+   if (Application->MessageBox("分隔段落？",
+      "mPDB", MB_OKCANCEL) != IDOK) return;
+
+   ShowWaitCursor();
+   int number = ChapterNumber;
+   AnsiString space = "\r\n";
+   for (int i = 1; i <= ChapterCount; i++) {
+      int changed = false;
+      LoadChapter(i);
+      for (int j = 1; j <= Buffer.Length(); j++) {
+         char c = Buffer[j];
+         if (c & 0x80) { j++; continue; }
+         if (j + 2 > Buffer.Length()) break;
+         if (c == '\r' && Buffer[j+1] == '\n') {
+            if (Buffer[j+2] == '\r') { j = j + 3; continue; }
+            else if (Buffer[j-1] == '\n') { j = j + 3; continue; }
+            else {
+               j = j + 2;
+               Buffer.Insert(space, j);
+               changed++;
+               j++;
+               }
+            }
+         }
+      if (changed) SaveChapter(i);
+      }
+
+   ChapterNumber = number;
+   RestoreCursor();
+   EditFile = fldEditFile->Text;
+   LoadEditFile();
+   Application->MessageBox("段落分隔了！", "mPDB", MB_OK);
+
+   }
+
+
+ /*---------------------------*/
+/* THome::btnRemoveSpaceClick */
+/*----------------------------*/
+
+void __fastcall THome::btnRemoveSpaceClick(TObject *Sender) {
+
+   CheckModified();
+   if (!ValidateSetupData()) return;
+   if (!GetChapterSizes()) return;
+
+   if (Application->MessageBox("刪除分行？",
+      "mPDB", MB_OKCANCEL) != IDOK) return;
+
+   ShowWaitCursor();
+   int number = ChapterNumber;
+   AnsiString space = "\r\n";
+   for (int i = 1; i <= ChapterCount; i++) {
+      int changed = false;
+      LoadChapter(i);
+      for (int j = 1; j <= Buffer.Length(); j++) {
+         char c = Buffer[j];
+         if (c & 0x80) { j++; continue; }
+         if (j + 3 > Buffer.Length()) break;
+         if (c == '\r' && Buffer[j+1] == '\n') {
+            if (Buffer[j+2] == '\r' && Buffer[j+3] == '\n') {
+               Buffer.Delete(j, 2);
+               changed = true;
+               }
+            }
+         }
+      if (changed) SaveChapter(i);
+      }
+
+   ChapterNumber = number;
+   RestoreCursor();
+   EditFile = fldEditFile->Text;
+   LoadEditFile();
+   Application->MessageBox("分行刪除了！", "mPDB", MB_OK);
+
+   }
+
+
+/*-----------------------------*/
+/* THome::btnRemoveWhitesClick */
+/*-----------------------------*/
+
+void __fastcall THome::btnRemoveWhitesClick(TObject *Sender) {
+
+   CheckModified();
+   if (!ValidateSetupData()) return;
+   if (!GetChapterSizes()) return;
+
+   if (Application->MessageBox("刪除空白字元？",
+      "mPDB", MB_OKCANCEL) != IDOK) return;
+
+   ShowWaitCursor();
+   AnsiString space = "　";
+   AnsiString space2 = "　　";
+   int number = ChapterNumber;
+   for (int i = 1; i <= ChapterCount; i++) {
+      LoadChapter(i);
+      int changed = false;
+      int k = 0;
+      int chinese = true;
+      for (int j = 1; j < Buffer.Length(); j++) {
+         k++;
+         char c = Buffer[j];
+         if (c & 0x80) { chinese = true; j++; continue; }
+         if (c == '\t') { // Replace Tab with two spaces
+            Buffer.Delete(j, 1);
+            Buffer.Insert(space2, j);
+            changed++;
+            j = j + 3;
+            continue;
+            }
+         if (c == '\r') {
+            while (j > 1 && k > 10) { // Remove trailing spaces of the previous line
+               if (Buffer[j - 1] == space[2]) {
+                  if (j > 1 && Buffer[j-2] == space[1]) {
+                     Buffer.Delete(j-2, 2);
+                     j -= 2;
+                     k -= 2;
+                     changed++;
+                     continue;
+                     }
+                  }
+               break;
+               }
+            chinese = true;
+            k = 0;
+            }
+         if (c == '\n') { chinese = true; k = 0; continue; }
+         if (c != ' ') { 
+            if (('a'<= c && c <='z') || ('A'<= c && c <='Z')) chinese = false;
+            else chinese = true;
+            continue;
+            }
+         if (!chinese) continue;
+         Buffer.Delete(j, 1);
+         j--;
+         changed++;
+         }
+      k = Buffer.Length() - 1;
+      for (int j = k; j > 1; j--) {
+         char c = Buffer[j];
+         if (c == '\n' || c == '\r') {
+            Buffer[j] = 0;
+            changed = true;
+            continue;
+            }
+         break;
+         }
+      if (changed) SaveChapter(i);
+      }
+
+   ChapterNumber = number;
+   RestoreCursor();
+   EditFile = fldEditFile->Text;
+   LoadEditFile();
+   Application->MessageBox("空白字元刪除了！", "mPDB", MB_OK);
+
+   }
+
+
+/*-----------------------*/
+/* THome::btnIndentClick */
+/*-----------------------*/
+
+void __fastcall THome::btnIndentClick(TObject *Sender) {
+
+   CheckModified();
+   if (!ValidateSetupData()) return;
+   if (!GetChapterSizes()) return;
+
+   if (Application->MessageBox("縮排段落？",
+      "mPDB", MB_OKCANCEL) != IDOK) return;
+
+   ShowWaitCursor();
+   int number = ChapterNumber;
+
+   AnsiString space = "　　";
+   AnsiString space1 = "　";
+   for (int i = 1; i <= ChapterCount; i++) {
+      int changed = false;
+      LoadChapter(i);
+      for (int j = 1; j <= Buffer.Length(); j++) {
+         char c = Buffer[j];
+         if (c & 0x80) { j++; continue; }
+         if (j + 5 > Buffer.Length()) break;
+         if (c == '\r' && Buffer[j+1] == '\n'
+            && Buffer[j+2] == '\r' && Buffer[j+3] == '\n') {
+            if (Buffer[j+4] == space[1] && Buffer[j+5] == space[2] ) {
+               j = j + 6;
+               if (Buffer[j] != space[1] || Buffer[j+1] != space[2]) {
+                   Buffer.Insert(space1, j);
+                   changed++;
+                   j = j + 2;
+                   }
+               continue;
+               }
+            else if (Buffer[j+4] == '\r') {
+               j++; continue;
+               }
+            else {
+               j = j + 4;
+               Buffer.Insert(space, j);
+               changed++;
+               j = j + 4;
+               }
+            }
+         }
+      if (changed) SaveChapter(i);
+      }
+
+   ChapterNumber = number;
+   RestoreCursor();
+   EditFile = fldEditFile->Text;
+   LoadEditFile();
+   Application->MessageBox("段落縮排了！", "mPDB", MB_OK);
+
+   }
+
+
+/*--------------------------------*/
+/* THome::btnProduceContentsClick */
+/*--------------------------------*/
+
+void __fastcall THome::btnProduceContentsClick(TObject *Sender) {
+
+   CheckModified();
+   if (!ValidateSetupData()) return;
+   if (!GetChapterSizes()) return;
+
+   if (Application->MessageBox("產生目錄？",
+      "mPDB", MB_OKCANCEL) != IDOK) return;
+
+   AnsiString space = "\r\n";
+   AnsiString path = Directory + "\\";
+   AnsiString name = path + "0.txt";
+   OFSTRUCT of;
+   HFILE file = OpenFile(name.c_str(), &of, OF_CREATE);
+   if (file == -1) { _lclose(file); return; }
+
+   ShowWaitCursor();
+   int number = ChapterNumber;
+   for (int i = 1; i <= ChapterCount; i++) {
+      LoadChapter(i);
+      int changed = false;
+      for (int j = 1; j <= Buffer.Length(); j++) {
+         char c = Buffer[j];
+         if (c != '\r') continue;
+         AnsiString title = Buffer.SubString(1, j+1);
+         int length = (i == ChapterCount) ? j - 1 : j + 1;
+         _lwrite(file, &title[1], length);
+
+         if (j + 4 <= Buffer.Length()) {
+            if (Buffer[j+1] == '\n' && Buffer[j+2] == '\r'
+              && Buffer[j+3] == '\n' && Buffer[j+4] != '\r') {
+               Buffer.Insert(space, j+2);
+               changed++;
+               }
+            break;
+            }
+         }
+      if (changed) SaveChapter(i);
+      }
+
+   _lclose(file);
+   ChapterNumber = number;
+   RestoreCursor();
+   fldEditFile->Text = name;
+
+   Application->MessageBox("目錄 0.txt 產生了！", "mPDB", MB_OK);
+
+   }
+
+
+/*-----------------*/
+/* ToChineseNumber */
+/*-----------------*/
+
+void __fastcall THome::ToChineseNumber(char* source, AnsiString& target) {
+
+   char* n[10] = { "零", "一", "二","三", "四",
+      "五", "六", "七","八", "九"};
+   char* u[12] = { "千", "百", "十", "億", "千", "百", "十", "萬",
+      "千", "百", "十", "元" };
+
+   char buffer[15];
+   char temp[41];
+   char* str;
+   int length = strlen(source);
+   if (!length) return;
+   if (length > 14) return;
+
+   strcpy(buffer, source);
+   int k = 0;
+   for (int x = 0; x < length; x++) { // Remove commas
+      char c = buffer[x];
+      if (c != ',') buffer[k++] = c;
+      else if (c == '.') break;
+      }
+
+   length = k;
+
+   int unit = 0;
+   int zero = true;
+   for (int x = length - 1; x >= 0; x--) {
+      unit++;
+      if (buffer[x] != '0') { zero = false; continue; }
+      if (unit == 1) buffer[x] = 'U';
+      else if (unit == 5) { // 萬
+         buffer[x] = 'W';
+         zero = true;
+         if ((length >= 9)
+            && (buffer[x - 1] == '0')
+            && (buffer[x - 2] == '0')
+            && (buffer[x - 3] == '0'))
+            buffer[x] = (buffer[x + 1] == '0') ? 'B' : '0';
+         else if (buffer[x + 1] != '0') buffer[x] = 'Z';
+         }
+      else if (unit == 9) buffer[x] = 'I'; // 億
+      else if (zero) buffer[x] = 'B';
+      else zero = true;
+      }
+
+   for (int x = length - 2; x >= 0; x--) {
+      if (buffer[x] == 'B') continue;
+      if (buffer[x] == 'Z') { buffer[x] = 'W'; break; }
+      break;
+      }
+
+   k = 0;
+   if (length > 12) length = 12;
+   for (int i = 0; i < length; i++) {
+      char c = buffer[i];
+      if (c == 'U') {
+//         str = u[11]; temp[k++] = str[0]; temp[k++] = str[1];
+         }
+      else if (c == 'W') { // 萬
+         str = u[7]; temp[k++] = str[0]; temp[k++] = str[1];
+         }
+      else if (c == 'Z') {
+         str = u[7]; temp[k++] = str[0]; temp[k++] = str[1];
+//         if (!SkipChineseZero) {
+//            str = n[0]; temp[k++] = str[0]; temp[k++] = str[1];
+//            }
+         }
+      else if (c == 'I') { // 億
+         str = u[3]; temp[k++] = str[0]; temp[k++] = str[1];
+         }
+      else if ('0' <= c && c <= '9') {
+         int d = c - '0';
+         int e = 12 - length + i;
+         if (d) {
+            if (d != 1) {
+               str = n[d]; temp[k++] = str[0]; temp[k++] = str[1];
+               }
+            else if (i != 0) {
+               str = n[d]; temp[k++] = str[0]; temp[k++] = str[1];
+               }
+            else if (length != 2 && length != 6 && length != 10) {
+               str = n[d]; temp[k++] = str[0]; temp[k++] = str[1];
+               }
+            if (e < 11) {
+               str = u[e]; temp[k++] = str[0]; temp[k++] = str[1];
+               }
+            }
+         else if (!SkipChineseZero) {
+            str = n[d]; temp[k++] = str[0]; temp[k++] = str[1];
+            }
+         }
+      }
+
+   temp[k] = 0;
+   target = temp;
+
+   }
+
+
+/*---------------*/
+/* ToChineseYear */
+/*---------------*/
+
+void __fastcall THome::ToChineseYear(char* source, AnsiString& target) {
+
+   char* n[10] = { "○", "一", "二","三", "四",
+      "五", "六", "七","八", "九"};
+
+   char temp[20];
+   char* str;
+
+   int length = strlen(source);
+   if (!length) return;
+   if (length > 9) return;
+
+   int k = 0;
+   for (int i = 0; i < length; i++) {
+      char c = source[i];
+      int d = c - '0';
+      str = n[d]; temp[k++] = str[0]; temp[k++] = str[1];
+      }
+
+   temp[k] = 0;
+   target = temp;
+
+   }
+
+
+/*------------------------------*/
+/* THome::btnConvertNumberClick */
+/*------------------------------*/
+
+void __fastcall THome::btnConvertNumberClick(TObject *Sender) {
+
+   CheckModified();
+   if (!ValidateSetupData()) return;
+   if (!GetChapterSizes()) return;
+
+   if (Application->MessageBox("轉換數字？",
+      "mPDB", MB_OKCANCEL) != IDOK) return;
+
+   char* year = "年";
+   char* to = "｜";
+   AnsiString edit_saved = EditFile;
+   int start_saved = Memo1->SelStart;
+   int length_saved = Memo1->SelLength;
+   int number_saved = ChapterNumber;
+
+   int found = false;
+   int count = 0;
+   char source[14];
+   for (int i = ChapterNumber; i <= ChapterCount; i++) {
+      int changed = false;
+      int start = 1;
+      if (ChapterNumber == i) {
+         Buffer = Memo1->Text;
+         start = Memo1->SelStart + 1;
+         if (start < 1) start = 1;
+         }
+      else {
+         LoadChapter(i);
+         Memo1->Text = Buffer;
+         Memo1->Refresh();
+         Memo1->Modified = false;
+         fldEditFile->Text = EditChapter;
+         fldEditFile->Refresh();
+         }
+      for (int j = start; j <= Buffer.Length(); j++) {
+         char c = Buffer[j];
+         if (c & 0x80) { j++; continue; }
+         if ('0' <= c && c <= '9') {
+            count = 0;
+            source[count++] = c;
+            while (j + count < Buffer.Length()) {
+               c = Buffer[j + count];
+               if ('0' <= c && c <= '9') {
+                  source[count++] = c;
+                  continue;
+                  }
+               break;
+               }
+            source[count] = 0;
+            int answer = IDYES;
+            char message[100];
+            AnsiString chinese;
+            Memo1->SelStart = j - 1;
+            Memo1->SelLength = count;
+            if (count == 4 && ((year[0] == Buffer[j + count] &&
+               year[1] == Buffer[j + count +1]) ||
+               (to[0] = Buffer[j + count] && to[1] == Buffer[j + count +1])))
+               ToChineseYear(source, chinese);
+            else ToChineseNumber(source, chinese);
+            char* target = chinese.c_str();
+            sprintf(message, "將 %s 換成 %s?", source, target);
+            answer = Application->MessageBox(message, "取代",
+                MB_YESNOCANCEL);
+            int length = strlen(target);
+            if (answer == IDYES) {
+               Memo1->SetSelTextBuf(target);
+               LogReplacement(j, count, target);
+               changed++;
+               Buffer.Delete(j, count);
+               if (length) {
+                  Buffer.Insert(target, j);
+                  j = j + length - 1;
+                  }
+               }
+            else if (answer == IDNO) { j = j + count - 1; continue; }
+            else {
+                if (changed) {
+                  int length = Buffer.Length() + 1;
+                  Buffer.SetLength(length);
+                  SaveChapter(i);
+                  changed = false;
+                  Memo1->Modified = false;
+                  }
+               goto Restore_Position;
+               }
+            }
+         }
+      if (changed) {
+         int length = Buffer.Length() + 1;
+         Buffer.SetLength(length);
+         SaveChapter(i);
+         changed = false;
+         Memo1->Modified = false;
+         }
+      }
+
+   Restore_Position:
+
+      if (Application->MessageBox("轉換數字完了！返回原處？",
+         "mPDB", MB_OKCANCEL) != IDOK) return;
+
+      EditFile = edit_saved;
+      fldEditFile->Text = EditFile;
+
+      Memo1->SelStart = start_saved;
+      Memo1->SelLength = length_saved;
+      ChapterNumber = number_saved;
+      Memo1->SetFocus();
+
+   }
+
+
+/*-----------*/
+/* LoadPlate */
+/*-----------*/
+
+void __fastcall THome::LoadPlate() {
+
+   if (PlateNumber == 0) return;
+   if (PlatePageLoaded[PlateNumber] == FlipPageNumber) return;
+
+   AnsiString name = ExePath;
+   AnsiString plate = "PDB";
+   AnsiString page = "Pages";
+   name = name + plate[PlateNumber] + page[FlipPageNumber] + ".txt";
+   if (FileExists(name)) {
+      TStringList* list = new TStringList();
+      try { list->LoadFromFile(name); } catch (EFOpenError&) { }
+      if (PlateNumber == 1) {
+         for (int i = 0; i < 72; i++)
+            Plate1Button[i]->Caption = list->Strings[i];
+         }
+      else if (PlateNumber == 2) {
+         for (int i = 0; i < 72; i++)
+            Plate2Button[i]->Caption = list->Strings[i];
+         }
+      else if (PlateNumber == 3) {
+         for (int i = 0; i < 48; i++)
+            Plate3Button[i]->Caption = list->Strings[i];
+         }
+      delete list;
+      }
+   else {
+      if (PlateNumber == 1) {
+         for (int i = 0; i < 72; i++)
+            Plate1Button[i]->Caption = "";
+         if (FlipPageNumber == 1) {
+            AnsiString str = "，。：﹁﹂？、；｜﹃﹄！○一二三四五．　六七八九十※";
+            int j = 0;
+            char temp[3];
+            temp[2] = 0;
+            for (int k = 1; k <= 52; k++) {
+               temp[0] = str[k];
+               temp[1] = str[++k];
+               Plate1Button[j]->Caption = temp;
+               if (k == 12 || k == 24) j += 13;
+               else if (k == 38) j += 12;
+               else j++;
+               }
+            }
+         }
+      else if (PlateNumber == 2) {
+         for (int i = 0; i < 72; i++)
+            Plate2Button[i]->Caption = "";
+         }
+      else if (PlateNumber == 3) {
+         for (int i = 0; i < 48; i++)
+            Plate3Button[i]->Caption = "";
+         }
+      }
+
+   PlatePageLoaded[PlateNumber] = FlipPageNumber;
+
+   }
+
+
+/*-----------*/
+/* SavePlate */
+/*-----------*/
+
+void __fastcall THome::SavePlate() {
+
+   if (PlateNumber == 0) return;
+
+   AnsiString name = ExePath;
+   AnsiString plate = "PDB";
+   AnsiString page = "Pages";
+   name = name + plate[PlateNumber] + page[FlipPageNumber] + ".txt";
+
+   TStringList* list = new TStringList();
+   if (PlateNumber == 1) {
+      for (int i = 0; i < 72; i++)
+         list->Add(Plate1Button[i]->Caption);
+      }
+   else if (PlateNumber == 2) {
+      for (int i = 0; i < 72; i++)
+         list->Add(Plate2Button[i]->Caption);
+      }
+   else if (PlateNumber == 3) {
+      for (int i = 0; i < 48; i++)
+         list->Add(Plate3Button[i]->Caption);
+      }
+   try { list->SaveToFile(name); } catch (EFOpenError&) { }
+   delete list;
+
+   PlatePageLoaded[PlateNumber] = FlipPageNumber;
+
+   }
+
+
+/*---------------*/
+/* LayoutButtons */
+/*---------------*/
+
+void __fastcall THome::LayoutButtons() {
+
+   if (PlateNumber == 0) return;
+
+   if (PlateNumber == 1) {
+      if (Plate1ButtonsCreated) return;
+      CreateButtons();
+      int x = 1;
+      int y = 155;
+      int i = 0;
+      for (int j = 0; j < 4; j++) {
+         for (int k = 0; k < 18; k++) {
+            TButton* button = Plate1Button[i++];
+            button->Left = x;
+            button->Top = y;
+            button->Width = 30;
+            if (k == 5 || k == 11) y += 4;
+            y += 25;
+            }
+         x += 33;
+         y = 155;
+         }
+      }
+   else if (PlateNumber == 2) {
+      if (Plate2ButtonsCreated) return;
+      CreateButtons();
+      int x = 1;
+      int y = 1;
+      int i = 0;
+      for (int j = 0; j < 3; j++) {
+         for (int k = 0; k < 24; k++) {
+            TButton* button = Plate2Button[i++];
+            button->Left = x;
+            button->Top = y;
+            button->Width = 41;
+            if (k == 5 || k == 11 || k == 17) y += 4;
+            y += 25;
+            }
+         x += 44;
+         y = 1;
+         }
+      }
+   else if (PlateNumber == 3) {
+      if (Plate3ButtonsCreated) return;
+      CreateButtons();
+      int x = 1;
+      int y = 1;
+      int i = 0;
+      for (int j = 0; j < 2; j++) {
+         for (int k = 0; k < 24; k++) {
+            TButton* button = Plate3Button[i++];
+            button->Left = x;
+            button->Top = y;
+            button->Width = 63;
+            if (k == 5 || k == 11 || k == 17) y += 4;
+            y += 25;
+            }
+         x += 66;
+         y = 1;
+         }
+      }
+
+   }
+
+
+/*-----------------------*/
+/* MPanel::DrawPlateLine */
+/*-----------------------*/
+
+void __fastcall THome::DrawPlateLine() {
+
+   int width = Screen->Width;
+   int height = Screen->Height;
+   if (!TabControl2->Visible) return;
+   Canvas->Pen->Color = (PlateModeSwitched) ? clRed : clBtnFace;
+   int left = Panel1->Left - 1;
+   Canvas->MoveTo(left, Panel1->Top);
+   Canvas->LineTo(left, Panel1->Top + Panel1->Height);
+
+   }
+
+
+/*-------------------*/
+/* TabControl2Change */
+/*-------------------*/
+
+void __fastcall THome::TabControl2Change(TObject *Sender) {
+
+   FlipPageNumber = TabControl2->TabIndex + 1;
+   LoadPlate();
+
+   }
+
+
+/*-------------------*/
+/* TabControl3Change */
+/*-------------------*/
+
+void __fastcall THome::TabControl3Change(TObject *Sender) {
+
+   PlateNumber = TabControl3->TabIndex;
+   if (PlateNumber == 0) {
+      if (Panel2->Visible) Panel2->Hide();
+      if (Panel3->Visible) Panel3->Hide();
+      if (Panel4->Visible) Panel4->Hide();
+      if (!Panel1->Visible) Panel1->Show();
+      if (btnSwitch->Visible) btnSwitch->Hide();
+      if (TabControl2->Visible) TabControl2->Hide();
+      }
+   else {
+      LayoutButtons();
+      if (PlatePageLoaded[PlateNumber] == 0) {
+         FlipPageNumber = 1;
+         TabControl2->TabIndex = 0;
+         }
+      else {
+         FlipPageNumber = PlatePageLoaded[PlateNumber];
+         TabControl2->TabIndex = PlatePageLoaded[PlateNumber] - 1;
+         }
+      LoadPlate();
+      if (PlateNumber == 1) {
+         if (Panel1->Visible) Panel1->Hide();
+         if (Panel3->Visible) Panel3->Hide();
+         if (Panel4->Visible) Panel4->Hide();
+         if (!Panel2->Visible) Panel2->Show();
+         }
+      else if (PlateNumber == 2) {
+         if (Panel1->Visible) Panel1->Hide();
+         if (Panel2->Visible) Panel2->Hide();
+         if (Panel4->Visible) Panel4->Hide();
+         if (!Panel3->Visible) Panel3->Show();
+         }
+      else if (PlateNumber == 3) {
+         if (Panel1->Visible) Panel1->Hide();
+         if (Panel2->Visible) Panel2->Hide();
+         if (Panel3->Visible) Panel3->Hide();
+         if (!Panel4->Visible) Panel4->Show();
+         }
+      if (!TabControl2->Visible) TabControl2->Show();
+      if (!btnSwitch->Visible) btnSwitch->Show();
+      }
+   }
+
+
+/*---------------*/
+/* CheckModified */
+/*---------------*/
+
+void __fastcall THome::CheckModified() {
+
+   if (!Memo1->Modified) return;
+
+   char message[100];
+   sprintf(message, "%s 改變了，要儲存嗎？", EditFile.c_str());
+   int answer = Application->MessageBox(message, "儲存？", MB_YESNO);
+   if (answer == IDYES) SaveEditFile();
+
+   }
+
+
+/*------------------*/
+/* THome::FormPaint */
+/*------------------*/
+
+void __fastcall THome::FormPaint(TObject *Sender) {
+
+   DrawPlateLine();
+
+   }
+
+
+/*-----------------------*/
+/* THome::FormCloseQuery */
+/*-----------------------*/
+
+void __fastcall THome::FormCloseQuery(TObject *Sender, bool &CanClose) {
+
+   CanClose = true;
+
+   CheckModified();
+   if (!SetupFileChanged) { SaveIni(); return; }
+   if (Application->MessageBox("設定內容改變了，是否要儲存？",
+      "mPDB", MB_OKCANCEL) != IDOK) return;
+
+   btnSaveClick(Sender);
+   SaveIni();
+
+   }
+
+
+
+
+/*--------------------------*/
+/* THome::btnProofreadClick */
+/*--------------------------*/
+
+void __fastcall THome::btnProofreadClick(TObject *Sender) {
+
+   CheckModified();
+   if (!ValidateSetupData()) return;
+   if (!GetChapterSizes()) return;
+
+   if (Application->MessageBox("錯別字校正？",
+      "mPDB", MB_OKCANCEL) != IDOK) return;
+
+   AnsiString source = ExePath + "\\錯別字.txt";
+   HFILE file = _lopen(source.c_str(), OF_READ);
+   DataLength = 0;
+   if (file != HFILE_ERROR) {
+      DataLength = _llseek(file, 0L, 2);
+      if (DataLength) {
+         if (Data) delete Data;
+         Data = new char[DataLength + 1];
+         _llseek(file, 0L, 0);
+         _lread(file, Data, DataLength);
+         Data[DataLength] = 0;
+         }
+      }
+   _lclose(file);
+
+   if (DataLength == 0) return;
+   DataCount = GetDataCount(Data, DataLength);
+   if (DataCount == 0) return;
+   if (DataPtr) delete DataPtr;
+   DataPtr = new short[DataCount];
+   SetDataPtr(Data, DataLength, DataPtr);
+
+   AnsiString edit_saved = EditFile;
+   int start_saved = Memo1->SelStart;
+   int length_saved = Memo1->SelLength;
+   int number_saved = ChapterNumber;
+
+   for (int i = ChapterNumber; i <= ChapterCount; i++) {
+      int start = 1;
+      if (ChapterNumber == i) {
+         Buffer = Memo1->Text;
+         start = Memo1->SelStart + 1;
+         if (start < 1) start = 1;
+         }
+      else {
+         LoadChapter(i);
+         Memo1->Text = Buffer;
+         Memo1->Refresh();
+         Memo1->Modified = false;
+         fldEditFile->Text = EditChapter;
+         fldEditFile->Refresh();
+         }
+      int changed = false;
+      int skip = false;
+      for (int d = 0; d < DataCount; d++) {
+         char* source = &Data[DataPtr[d]];
+         if (skip) {
+            if (source[0] != '}') continue;
+            skip = false;
+            continue;
+            }
+         if (source[0] == '{') {
+            skip = true;
+            continue;
+            }
+         if (source[0] == '#') continue;
+         if (source[0] == '$') {
+            d = DataCount;
+            continue;
+            }
+         int prompt = true;
+         if (source[0] == '~') {
+            prompt = false;
+            source++;
+            }
+         int length1 = strlen(source);
+         int k = 0;
+         int found = false;
+         while (k < length1) {
+            if (source[k++] == '/') {
+               length1 = k - 1;
+               found = true;
+               break;
+               }
+            }
+         if (!found) continue;
+         char* target = &source[k];
+         int length2 = strlen(target);
+         int chinese = source[0] & 0x80;
+         
+         for (int j = start; j <= Buffer.Length(); j++) {
+            if (chinese) if (!(Buffer[j] & 0x80)) continue;
+            if (j > Buffer.Length() - length1) break;
+            k = 0;
+            while (k < length1) {
+               if (Buffer[j+k] != source[k]) break;
+               k++;
+               }
+            if (k < length1) {
+               if (chinese) j++;
+               continue;
+               }
+            int answer = IDYES;
+            Memo1->SelStart = j - 1;
+            Memo1->SelLength = length1;
+            if (prompt) {
+               char message[100];
+               AnsiString temp = source;
+               temp = temp.SubString(1, length1);
+               sprintf(message, "將 %s 換成 %s?", temp.c_str(), target);
+               answer = Application->MessageBox(message, "取代",
+                   MB_YESNOCANCEL);
+               }
+            if (answer == IDYES) {
+               Memo1->SetSelTextBuf(target);
+               LogReplacement(j, length1, target);
+               changed++;
+               Buffer.Delete(j, length1);
+               if (length2) {
+                  Buffer.Insert(target, j);
+                  j = j + length2 - 1;
+                  }
+               }
+            else if (answer == IDNO) { j++; continue; }
+            else {
+               if (changed) {
+                  int length = Buffer.Length() + 1;
+                  Buffer.SetLength(length);
+                  SaveChapter(i);
+                  changed = false;
+                  Memo1->Modified = false;
+                  }
+               goto Restore_Position;
+               }
+            }
+         }
+
+      if (changed) {
+         int length = Buffer.Length() + 1;
+         Buffer.SetLength(length);
+         SaveChapter(i);
+         changed = false;
+         Memo1->Modified = false;
+         }
+
+      }
+
+   Restore_Position:
+
+      if (Application->MessageBox("錯別字校正完了！返回原處？",
+         "mPDB", MB_OKCANCEL) != IDOK) return;
+
+      EditFile = edit_saved;
+      fldEditFile->Text = EditFile;
+
+      Memo1->SelStart = start_saved;
+      Memo1->SelLength = length_saved;
+      ChapterNumber = number_saved;
+      Memo1->SetFocus();
+
+   }

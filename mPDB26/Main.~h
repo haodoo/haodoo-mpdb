@@ -1,0 +1,204 @@
+//---------------------------------------------------------------------------
+
+#ifndef MainH
+#define MainH
+//---------------------------------------------------------------------------
+#include <Classes.hpp>
+#include <Controls.hpp>
+#include <StdCtrls.hpp>
+#include <Forms.hpp>
+#include <ExtCtrls.hpp>
+#include <ComCtrls.hpp>
+//---------------------------------------------------------------------------
+class THome : public TForm
+{
+__published:	// IDE-managed Components
+        TButton *btnExit;
+        TButton *btnSave;
+        TEdit *fldSetupFile;
+        TButton *btnSetupFile;
+        TButton *Button1;
+        TMemo *Memo1;
+        TEdit *fldDirectory;
+        TLabel *Label4;
+        TEdit *fldTitle;
+        TLabel *Label3;
+        TEdit *fldChapterCount;
+        TButton *btnDirectory;
+        TButton *btnPrevBook;
+        TButton *btnNextBook;
+        TBevel *Bevel5;
+        TBevel *Bevel6;
+        TTabControl *TabControl2;
+        TPanel *Panel1;
+        TTabControl *TabControl3;
+        TButton *Button107;
+        TButton *Button108;
+        TButton *Button161;
+        TButton *Button162;
+        TButton *Button163;
+        TButton *Button164;
+        TButton *Button212;
+        TStaticText *StaticText2;
+        TButton *Button213;
+        TButton *Button214;
+        TCheckBox *CheckBox1;
+        TButton *Button215;
+        TPanel *Panel2;
+        TCheckBox *CheckBox3;
+        TLabel *Label5;
+        TLabel *Label6;
+        TEdit *fldSource;
+        TEdit *fldTarget;
+        TButton *Button216;
+        TButton *Button217;
+        TButton *Button218;
+        TButton *Button219;
+        TButton *Button220;
+        TButton *Button221;
+        TPanel *Panel3;
+        TPanel *Panel4;
+        TButton *btnSwitch;
+        TPanel *Panel5;
+        TButton *btnFile;
+        TEdit *fldEditFile;
+        TButton *btnPreview;
+        TButton *btnPrevChapter;
+        TButton *btnNextChapter;
+        TButton *btnSaveFile;
+        TButton *Button2;
+
+   void __fastcall InitPanel();
+   void __fastcall CreateButtons();
+   void __fastcall GetExePath();
+   void __fastcall RestoreCursor();
+   void __fastcall ShowWaitCursor();
+
+   int  __fastcall GetDataCount(char* data, int length);
+   void __fastcall SetDataPtr(char* data, int length, short* ptr);
+
+   int  __fastcall GetChapterSize(int i);
+   int  __fastcall GetChapterSizes();
+   void __fastcall LoadChapter(int i);
+   void __fastcall BackupChapter(int i);
+   void __fastcall SaveChapter(int i);
+
+   void __fastcall SetPdbHeader();
+   void __fastcall SetPdbBookInfo();
+   void __fastcall EncryptBuffer();
+   void __fastcall WritePdb();
+
+   void __fastcall fldSetupFileChange(TObject *Sender);
+   void __fastcall fldDirectoryChange(TObject *Sender);
+   void __fastcall fldChapterCountChange(TObject *Sender);
+   void __fastcall fldTitleChange(TObject *Sender);
+
+   void __fastcall LoadIni();
+   void __fastcall SaveIni();
+
+   void __fastcall LoadSetupFile();
+   void __fastcall SaveSetupFile();
+
+   int  __fastcall ValidateINF(AnsiString& name);
+
+   int __fastcall GetPDBString(char* info);
+   int __fastcall GetPDBNumber(char* info);
+   int __fastcall GetPDBRecordOffset(int i);
+   void __fastcall DecryptPDBChapter();
+   int __fastcall LoadPDBChapter();
+   void __fastcall SavePDBChapter();
+   int __fastcall LoadPDBBook(AnsiString& name);
+   void __fastcall ExportTextFiles();
+
+   void __fastcall btnOpenClick(TObject *Sender);
+   void __fastcall btnSaveClick(TObject *Sender);
+   void __fastcall btnSaveAsClick(TObject *Sender);
+
+   void __fastcall btnPrevBookClick(TObject *Sender);
+   void __fastcall btnNextBookClick(TObject *Sender);
+
+   void __fastcall LogReplacement(int j, int length, char* target);
+//   void __fastcall Replace(int i);
+
+   void __fastcall btnExitClick(TObject *Sender);
+
+   void __fastcall LoadEditFile();
+   void __fastcall SaveEditFile();
+   void __fastcall btnSaveFileClick(TObject *Sender);
+   void __fastcall SetChapterNumber();
+   void __fastcall btnEditFileClick(TObject *Sender);
+   void __fastcall fldEditFileChange(TObject *Sender);
+
+   void __fastcall btnInsertChar(TObject *Sender);
+   void __fastcall ReplaceChar();
+   void __fastcall btnReplaceChar(TObject *Sender);
+
+   void __fastcall btnSearchDownClick(TObject *Sender);
+   void __fastcall btnSearchUpClick(TObject *Sender);
+   void __fastcall btnResumeClick(TObject *Sender);
+
+   void __fastcall RestoreMemo();
+   void __fastcall PreviewWindow();
+   void __fastcall btnPreviewClick(TObject *Sender);
+
+   void __fastcall PrevChapter(int last);
+   void __fastcall btnPrevChapterClick(TObject *Sender);
+   void __fastcall NextChapter();
+   void __fastcall btnNextChapterClick(TObject *Sender);
+
+   void __fastcall btnDirectoryClick(TObject *Sender);
+
+   int  __fastcall ValidateSetupData();
+
+   void __fastcall btnSavePositionClick(TObject *Sender);
+   void __fastcall btnRestorePositionClick(TObject *Sender);
+   void __fastcall btnPasteClick(TObject *Sender);
+
+   void __fastcall btnConvertMarksClick(TObject *Sender);
+   void __fastcall btnConvertClick(TObject *Sender);
+   void __fastcall btnFontClick(TObject *Sender);
+
+   void __fastcall btnRemoveSoftBreakClick(TObject *Sender);
+   void __fastcall btnAddSpaceClick(TObject *Sender);
+   void __fastcall btnRemoveSpaceClick(TObject *Sender);
+   void __fastcall btnRemoveWhitesClick(TObject *Sender);
+   void __fastcall btnSwitchClick(TObject *Sender);
+   void __fastcall btnIndentClick(TObject *Sender);
+   void __fastcall btnProduceContentsClick(TObject *Sender);
+
+   void __fastcall ToChineseNumber(char* source, AnsiString& target);
+   void __fastcall ToChineseYear(char* source, AnsiString& target);
+   void __fastcall btnConvertNumberClick(TObject *Sender);
+
+   void __fastcall LoadPlate();
+   void __fastcall SavePlate();
+   void __fastcall LayoutButtons();
+   void __fastcall DrawPlateLine();
+
+   void __fastcall TabControl2Change(TObject *Sender);
+   void __fastcall TabControl3Change(TObject *Sender);
+   void __fastcall CheckModified();
+
+   void __fastcall FormPaint(TObject *Sender);
+   void __fastcall FormCloseQuery(TObject *Sender, bool &CanClose);
+
+   void __fastcall btnProofreadClick(TObject *Sender);
+
+private: // User declarations
+
+
+public: // User declarations
+
+   __fastcall THome(TComponent* Owner);
+   __fastcall virtual ~THome();
+
+#ifdef DEMO
+   int __fastcall DemoExpired();
+   void __fastcall RegisterApplication();
+#endif
+ 
+   };
+//---------------------------------------------------------------------------
+extern PACKAGE THome *Home;
+//---------------------------------------------------------------------------
+#endif
